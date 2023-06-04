@@ -5,7 +5,7 @@ from signal import signal, SIGINT
 from curio import run, run_in_thread, open_connection, spawn, TaskGroup, Queue, Kernel, UniversalQueue, sleep
 from socket import SHUT_WR
 
-logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.DEBUG)
+logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
 RECV_SIZE = 1024
 
@@ -37,7 +37,7 @@ class ServerProtocol:
 
     async def ping(self) -> bytes | bool:
         """Pings the server, returning it's response. If the server is offline returns False"""
-        logging.info("pinging . . .")
+        logging.debug("pinging . . .")
         logging.debug("Opening connection")
         try:
             conn = await open_connection(*self.address)
@@ -58,7 +58,7 @@ class Client:
     def __init__(self, address: tuple[str, int]):
         self.address = address
         self.server_comm = ServerProtocol(self.address)
-        self.connected = False
+        self.connected = None # None if not pinged yet
 
         self.signals = UniversalQueue()
 
@@ -69,6 +69,7 @@ class Client:
             await g.spawn(self.stdinput_loop)
             await g.spawn(self.events_loop)
             await g.spawn(self.auto_pinger)
+            print("Connecting... Please wait")
 
 
     def quit(self):
@@ -83,29 +84,38 @@ class Client:
             signal = await self.signals.get()
             match signal:
                 case QuitSignal():
-                    logging.info("Quit msg received; Closing . . .")
+                    logging.debug("Quit msg received; Closing . . .")
+                    print("Quiting!")
                     return
                 case StdInput(user_input): # no longer useful
-                    logging.info("omg: " + str(user_input))
+                    logging.debug("STDIN: " + str(user_input))
                 case "online":
-                    pass
+                    logging.debug("Server online")
+                    print("Server online")
                 case "offline":
-                    pass
+                    logging.debug("Server offline")
+                    print("Server offline")
+
+
+    async def ping(self) -> str | bool:
+        if response := await self.server_comm.ping():
+            logging.debug("Ping successful - server online")
+            if self.connected != True:
+                await self.signals.put("online")
+            self.connected = True
+            return response.decode('utf-8')
+        else:
+            logging.debug("Ping unsuccessful - server offline")
+            if self.connected != False:
+                await self.signals.put("offline")
+            self.connected = False
+            return False
 
 
     async def auto_pinger(self):
-        """Automatically pings the server every 20 secondes"""
+        """Indefinitely pings the server, updating `self.connected` accordingly."""
         while True:
-            if await self.server_comm.ping():
-                logging.info("Ping successful - server online")
-                if self.connected == False:
-                    await self.signals.put("online")
-                self.connected = True
-            else:
-                logging.info("Ping unsuccessful - server offline")
-                if self.connected == True:
-                    await self.signals.put("offline")
-                self.connected = False
+            await self.ping()
             await sleep(20)
 
 
@@ -116,10 +126,10 @@ class Client:
         elif user_input == STATUS_INP:
             print(self.connected)
         elif user_input == PING_INP:
-            if response := self.server_comm.ping():
-                print(f"Ping successful! [{response}]")
+            if response := await self.ping():
+                print(f'Ping OK: "{response}"')
             else:
-                print ("Server offline or wrong address")
+                print ("Ping failed")
         elif user_input == QUIT_INP:
             quit()
 
