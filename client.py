@@ -16,13 +16,12 @@ PING_MSG = b"ping"
 # TODO: Add a help command
 # TODO: Add a command to declare files 
 
-COMMANDS = ["hello", "ping", "status", "quit", "meow"]
+COMMANDS = ["hello", "ping", "status", "quit"]
 
 HELLO_INP = "hello"
 PING_INP = "ping"
 STATUS_INP = "status"
 QUIT_INP = "quit"
-QUIT_SIG = "QUITSIG"
 
 class StdInput:
     __match_args__ = ("input_line", )
@@ -62,7 +61,7 @@ class Client:
         self.signals = UniversalQueue()
 
 
-    async def cmd_run(self):
+    async def run(self):
         print(f"Available commands: {', '.join(COMMANDS)}")
         signal(SIGINT, lambda signo, frame: self.quit())
         async with TaskGroup(wait=any) as g:
@@ -81,7 +80,7 @@ class Client:
             return "Ping failed"
 
     async def cmd_status(self):
-        return f'"Server {"connected" if self.connected else "disconnected"}.'
+        return f'Server {"connected" if self.connected else "disconnected"}.'
 
     async def cmd_declare_folder(self):
         raise NotImplementedError
@@ -102,7 +101,7 @@ class Client:
 
     def quit(self):
         logging.debug("Sending quit signal")
-        self.signals.put(QUITSIG)
+        self.signals.put("quit")
 
 
     async def ping(self) -> str | bool:
@@ -142,7 +141,7 @@ class Client:
             signal = await self.signals.get()
             print('!EVENT! ', end='')
             match signal:
-                case QUITSIG:
+                case "quit":
                     logging.debug("Quit msg received; Closing . . .")
                     print("Client shutting down")
                     return
