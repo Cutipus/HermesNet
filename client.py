@@ -22,28 +22,7 @@ HELLO_INP = "hello"
 PING_INP = "ping"
 STATUS_INP = "status"
 QUIT_INP = "quit"
-HELLO_RSP = "meow"
-
-
-
-def hello(self):
-    return 'meow'
-
-def ping(self):
-    pass
-
-def status(self):
-    pass
-
-def quit(self):
-    pass
-
-def declare_folder(self):
-    pass
-
-class QuitSignal:
-    pass
-
+QUIT_SIG = "QUITSIG"
 
 class StdInput:
     __match_args__ = ("input_line", )
@@ -83,7 +62,7 @@ class Client:
         self.signals = UniversalQueue()
 
 
-    async def run(self):
+    async def cmd_run(self):
         print(f"Available commands: {', '.join(COMMANDS)}")
         signal(SIGINT, lambda signo, frame: self.quit())
         async with TaskGroup(wait=any) as g:
@@ -92,34 +71,38 @@ class Client:
             await g.spawn(self.auto_pinger)
             print("Connecting... Please wait")
 
+    async def cmd_hello(self):
+        return 'meow'
+
+    async def cmd_ping(self):
+        if response := await self.ping():
+            return f'Ping OK: "{response}"'
+        else:
+            return "Ping failed"
+
+    async def cmd_status(self):
+        return f'"Server {"connected" if self.connected else "disconnected"}.'
+
+    async def cmd_declare_folder(self):
+        raise NotImplementedError
+
+    async def cmd_quit(self):
+        self.quit()
+
+    async def process_stdinput(self, user_input: str):
+        """Processes a single line of user input, responding to user commands"""
+        if user_input == HELLO_INP:
+            print(await self.cmd_hello())
+        elif user_input == STATUS_INP:
+            print(await self.cmd_status())
+        elif user_input == PING_INP:
+            print(await self.cmd_ping())
+        elif user_input == QUIT_INP:
+            await self.cmd_quit()
 
     def quit(self):
         logging.debug("Sending quit signal")
-        self.signals.put(QuitSignal())
-
-
-    async def events_loop(self):
-        """Reads client-related events"""
-        # at the moment this only checks for quit signals
-
-        while True:
-            signal = await self.signals.get()
-            print('!EVENT! ', end='')
-            match signal:
-                case QuitSignal():
-                    logging.debug("Quit msg received; Closing . . .")
-                    print("Client shutting down")
-                    return
-                case StdInput(user_input): # no longer useful
-                    logging.debug("STDIN: " + str(user_input))
-                case "online":
-                    logging.debug("Server online")
-                    print("Server online")
-                case "offline":
-                    logging.debug("Server offline")
-                    print("Server offline")
-                case _:
-                    print("Nothing?")
+        self.signals.put(QUITSIG)
 
 
     async def ping(self) -> str | bool:
@@ -143,22 +126,6 @@ class Client:
             await self.ping()
             await sleep(20)
 
-
-    async def process_stdinput(self, user_input: str):
-        """Processes a single line of user input, responding to user commands"""
-        if user_input == HELLO_INP:
-            print(HELLO_RSP)
-        elif user_input == STATUS_INP:
-            print(f'"Server {"connected" if self.connected else "disconnected"}.')
-        elif user_input == PING_INP:
-            if response := await self.ping():
-                print(f'Ping OK: "{response}"')
-            else:
-                print ("Ping failed")
-        elif user_input == QUIT_INP:
-            quit()
-
-
     async def stdinput_loop(self):
         """Indefinitely reads user input from a different thread and processes it"""
         async with TaskGroup() as g:
@@ -169,6 +136,26 @@ class Client:
                 except EOFError:
                     logging.debug("End of input")
 
+    async def events_loop(self):
+        """Reads client-related events"""
+        while True:
+            signal = await self.signals.get()
+            print('!EVENT! ', end='')
+            match signal:
+                case QUITSIG:
+                    logging.debug("Quit msg received; Closing . . .")
+                    print("Client shutting down")
+                    return
+                case StdInput(user_input): # no longer useful
+                    logging.debug("STDIN: " + str(user_input))
+                case "online":
+                    logging.debug("Server online")
+                    print("Server online")
+                case "offline":
+                    logging.debug("Server offline")
+                    print("Server offline")
+                case _:
+                    print("Nothing?")
 
 async def main():
     client = Client(TRACKER_ADDRESS)
