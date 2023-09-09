@@ -1,3 +1,6 @@
+import logging
+from signal import signal, SIGINT
+
 from curio import run, tcp_server
 KILOBYTE = 1024
 
@@ -29,4 +32,8 @@ async def process_message(msg: bytearray) -> bytes:
         return b"I'm awake!"
 
 if __name__ == '__main__':
-    run(tcp_server, '', 25000, receive_message)
+    print('Started. Currently supports "ping" command(s).')
+    try:
+        run(tcp_server, '', 25000, receive_message)
+    except KeyboardInterrupt:
+        print("Server shutting down...")

@@ -12,14 +12,34 @@ RECV_SIZE = 1024
 TRACKER_ADDRESS = "localhost", 25000
 PING_MSG = b"ping"
 
+# TODO: Rewrite every command as a function with an explanation for the user
+# TODO: Add a help command
+# TODO: Add a command to declare files 
+
+COMMANDS = ["hello", "ping", "status", "quit", "meow"]
+
 HELLO_INP = "hello"
 PING_INP = "ping"
 STATUS_INP = "status"
 QUIT_INP = "quit"
 HELLO_RSP = "meow"
 
-QUIT = 0
 
+
+def hello(self):
+    return 'meow'
+
+def ping(self):
+    pass
+
+def status(self):
+    pass
+
+def quit(self):
+    pass
+
+def declare_folder(self):
+    pass
 
 class QuitSignal:
     pass
@@ -46,7 +66,7 @@ class ServerProtocol:
             return False
         logging.debug("Sending message")
         await conn.sendall(PING_MSG)
-        await conn.shutdown(SHUT_WR)
+        await conn.shutdown(SHUT_WR) # end message signal
         logging.debug("Message sent")
         logging.debug("Retrieving response . . .")
         response = await conn.recv(RECV_SIZE)
@@ -64,6 +84,7 @@ class Client:
 
 
     async def run(self):
+        print(f"Available commands: {', '.join(COMMANDS)}")
         signal(SIGINT, lambda signo, frame: self.quit())
         async with TaskGroup(wait=any) as g:
             await g.spawn(self.stdinput_loop)
@@ -80,12 +101,14 @@ class Client:
     async def events_loop(self):
         """Reads client-related events"""
         # at the moment this only checks for quit signals
+
         while True:
             signal = await self.signals.get()
+            print('!EVENT! ', end='')
             match signal:
                 case QuitSignal():
                     logging.debug("Quit msg received; Closing . . .")
-                    print("Quiting!")
+                    print("Client shutting down")
                     return
                 case StdInput(user_input): # no longer useful
                     logging.debug("STDIN: " + str(user_input))
@@ -95,6 +118,8 @@ class Client:
                 case "offline":
                     logging.debug("Server offline")
                     print("Server offline")
+                case _:
+                    print("Nothing?")
 
 
     async def ping(self) -> str | bool:
@@ -103,7 +128,7 @@ class Client:
             if self.connected != True:
                 await self.signals.put("online")
             self.connected = True
-            return response.decode('utf-8')
+            return response.decode()
         else:
             logging.debug("Ping unsuccessful - server offline")
             if self.connected != False:
@@ -124,7 +149,7 @@ class Client:
         if user_input == HELLO_INP:
             print(HELLO_RSP)
         elif user_input == STATUS_INP:
-            print(self.connected)
+            print(f'"Server {"connected" if self.connected else "disconnected"}.')
         elif user_input == PING_INP:
             if response := await self.ping():
                 print(f'Ping OK: "{response}"')
@@ -144,9 +169,11 @@ class Client:
                 except EOFError:
                     logging.debug("End of input")
 
+
 async def main():
     client = Client(TRACKER_ADDRESS)
     await client.run()
+
 
 if __name__ == '__main__':
     run(main)
