@@ -2,7 +2,7 @@
 > This project is still **work in progress**. It is unsafe and no security considerations have been made. Discretion is advised.
 
 # HermesNet
-A distributed file sharing application inspired by SoulSeek and Torrent.
+A distributed file sharing application inspired by SoulSeek and Torrent written in Python.
 
 ## Features
 - Supports a CLI interactive interface for testing
