@@ -4,6 +4,8 @@ import logging
 from signal import signal, SIGINT
 from curio import run, run_in_thread, open_connection, spawn, TaskGroup, Queue, Kernel, UniversalQueue, sleep
 from socket import SHUT_WR
+from os import Path
+from hashlib import sha1
 
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
@@ -16,6 +18,8 @@ PING_MSG = b"ping"
 # TODO: Add a help command
 # TODO: Add a command to declare files 
 
+BUFSIZE = 1024**2 # one megabyte
+
 COMMANDS = ["hello", "ping", "status", "quit"]
 
 HELLO_INP = "hello"
@@ -23,11 +27,65 @@ PING_INP = "ping"
 STATUS_INP = "status"
 QUIT_INP = "quit"
 
-class StdInput:
-    __match_args__ = ("input_line", )
-    def __init__(self, input_line: str):
-        self.input_line = input_line
 
+#class StdInput:
+#    __match_args__ = ("input_line", )
+#    def __init__(self, input_line: str):
+#        self.input_line = input_line
+
+class File:
+    def __init__(self, path: Path):
+        self.name = path.name
+
+        filehash = sha1()
+        with path.open() as f:
+            while data := f.read(BUFSIZE):
+                filehash.update(data)
+        self.hash = filehash.hexdigest()
+
+    def encode(self) -> bytes:
+        raise NotImplementedError
+
+    def decode(cls, encoded: bytes) -> File:
+        raise NotImplementedError
+
+    def __repr__(self):
+        return f'{self.name}[{self.hash}]'
+
+class Directory:
+    def __init__(self, name: str, contents: list[Directory | File]):
+        self.name = name
+        self.contents = contents
+
+    def encode(self) -> bytes:
+        # Maybe send this via basic lisp syntax? Or JSON? Or some other thing that might even be built in.
+        # JSON is built in, so let's do that.
+        raise NotImplementedError
+
+    @classmethod
+    def decode(cls, encoded: bytes) -> FileTree:
+        raise NotImplementedError
+
+    @classmethod
+    def from_path(cls, path: Path) -> FileTree:
+        path = Path(path) # extra verification
+        contents = []
+        for x in path.iterdir():
+            if x.is_file():
+                contents.append(File(x))
+            elif x.is_dir():
+                contents.append(cls.from_path(x))
+        return Directory(path.name, contents)
+
+    def __repr__(self):
+        out = self.name + "{\n"
+        for x in self.contents:
+            match x:
+                case File():
+                    out += '    ' + repr(x) + "\n"
+                case Directory():
+                    out += '    ' + repr(x).replace("\n", "\n    ") + '\n'
+        return out + '\n}'
 
 class ServerProtocol:
     def __init__(self, address: tuple[str, int]):
@@ -50,6 +108,9 @@ class ServerProtocol:
         response = await conn.recv(RECV_SIZE)
         logging.debug("Responsed retrieved")
         return response
+
+    async def declare_folder(self, filetree: FileTree):
+        pass
 
 
 class Client:
@@ -82,7 +143,7 @@ class Client:
     async def cmd_status(self):
         return f'Server {"connected" if self.connected else "disconnected"}.'
 
-    async def cmd_declare_folder(self):
+    async def cmd_declare_folder(self, folder: Path):
         raise NotImplementedError
 
     async def cmd_quit(self):
@@ -145,8 +206,8 @@ class Client:
                     logging.debug("Quit msg received; Closing . . .")
                     print("Client shutting down")
                     return
-                case StdInput(user_input): # no longer useful
-                    logging.debug("STDIN: " + str(user_input))
+                #case StdInput(user_input): # no longer useful
+                #    logging.debug("STDIN: " + str(user_input))
                 case "online":
                     logging.debug("Server online")
                     print("Server online")
