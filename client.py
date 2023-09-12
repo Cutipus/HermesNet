@@ -28,43 +28,38 @@ STATUS_INP = "status"
 QUIT_INP = "quit"
 
 
-#class StdInput:
-#    __match_args__ = ("input_line", )
-#    def __init__(self, input_line: str):
-#        self.input_line = input_line
-
 class File:
-    def __init__(self, path: Path):
-        self.name = path.name
+    def __init__(self, name: str, hash: str):
+        self.name = name
+        self.hash = hash
 
+    @classmethod
+    def from_path(cls, path: Path):
+        name = path.name
         filehash = sha1()
         with path.open() as f:
             while data := f.read(BUFSIZE):
                 filehash.update(data)
-        self.hash = filehash.hexdigest()
+        hash = filehash.hexdigest()
+        return cls(name, hash)
+
+    def to_dict(self) -> dict:
+        return {'type': 'file', 'name': self.name, 'hash': self.hash}
 
     def encode(self) -> bytes:
-        raise NotImplementedError
+        return json.dumps(self.to_dict()).encode()
 
-    def decode(cls, encoded: bytes) -> File:
-        raise NotImplementedError
+    def __eq__(self, other: File) -> bool:
+        return self.name == other.name and self.hash == other.hash
 
     def __repr__(self):
         return f'{self.name}[{self.hash}]'
+
 
 class Directory:
     def __init__(self, name: str, contents: list[Directory | File]):
         self.name = name
         self.contents = contents
-
-    def encode(self) -> bytes:
-        # Maybe send this via basic lisp syntax? Or JSON? Or some other thing that might even be built in.
-        # JSON is built in, so let's do that.
-        raise NotImplementedError
-
-    @classmethod
-    def decode(cls, encoded: bytes) -> FileTree:
-        raise NotImplementedError
 
     @classmethod
     def from_path(cls, path: Path) -> FileTree:
@@ -72,10 +67,19 @@ class Directory:
         contents = []
         for x in path.iterdir():
             if x.is_file():
-                contents.append(File(x))
+                contents.append(File.from_path(x))
             elif x.is_dir():
                 contents.append(cls.from_path(x))
         return Directory(path.name, contents)
+
+    def to_dict(self) -> dict:
+        return {'type': 'directory', 'name': self.name, 'contents': [c.to_dict() for c in self.contents]}
+
+    def encode(self) -> bytes:
+        return json.dumps(self.to_dict()).encode()
+
+    def __eq__(self, other: Directory) -> bool:
+        return self.name == other.name and self.contents == other.contents
 
     def __repr__(self):
         out = self.name + "{\n"
@@ -86,6 +90,7 @@ class Directory:
                 case Directory():
                     out += '    ' + repr(x).replace("\n", "\n    ") + '\n'
         return out + '\n}'
+
 
 class ServerProtocol:
     def __init__(self, address: tuple[str, int]):
@@ -109,8 +114,20 @@ class ServerProtocol:
         logging.debug("Responsed retrieved")
         return response
 
-    async def declare_folder(self, filetree: FileTree):
+    async def declare_directory(self, directory: Directory):
         pass
+
+
+    def decode(self, encoded: bytes) -> File | Directory:
+        # TODO: the `loads` method can be very time consuming - use curio to put it in background
+        # TODO: validate the json
+        decode = json.loads(encoded.decode())
+        def parse(obj: dict) -> File | Directory:
+            if obj['type'] == 'file':
+                return File(obj['name'], obj['hash'])
+            elif obj['type']== 'directory':
+                return Directory(obj['name'], [parse(c) for c in obj['contents']])
+        return parse(decode)
 
 
 class Client:
@@ -118,9 +135,7 @@ class Client:
         self.address = address
         self.server_comm = ServerProtocol(self.address)
         self.connected = None # None if not pinged yet
-
         self.signals = UniversalQueue()
-
 
     async def run(self):
         print(f"Available commands: {', '.join(COMMANDS)}")
@@ -179,7 +194,6 @@ class Client:
             self.connected = False
             return False
 
-
     async def auto_pinger(self):
         """Indefinitely pings the server, updating `self.connected` accordingly."""
         while True:
@@ -216,6 +230,7 @@ class Client:
                     print("Server offline")
                 case _:
                     print("Nothing?")
+
 
 async def main():
     client = Client(TRACKER_ADDRESS)
