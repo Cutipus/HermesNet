@@ -1,18 +1,22 @@
 '''Receives commands from user and talks to server'''
+from __future__ import annotations
 # TODO: Transition from using if-else on input types to using StdSignals processing with match case.
 import logging
 from signal import signal, SIGINT
 from curio import run, run_in_thread, open_connection, spawn, TaskGroup, Queue, Kernel, UniversalQueue, sleep
 from socket import SHUT_WR
-from os import Path
+from pathlib import Path
+import json
 from hashlib import sha1
 
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
 RECV_SIZE = 1024
-
 TRACKER_ADDRESS = "localhost", 25000
+
+# TODO: use a more generic protocol
 PING_MSG = b"ping"
+DECLARE_DIR = 'DECLAREDIR {}'
 
 # TODO: Rewrite every command as a function with an explanation for the user
 # TODO: Add a help command
@@ -20,7 +24,7 @@ PING_MSG = b"ping"
 
 BUFSIZE = 1024**2 # one megabyte
 
-COMMANDS = ["hello", "ping", "status", "quit"]
+COMMANDS = ["hello", "ping", "status", "quit", "declare"]
 
 HELLO_INP = "hello"
 PING_INP = "ping"
@@ -46,8 +50,8 @@ class File:
     def to_dict(self) -> dict:
         return {'type': 'file', 'name': self.name, 'hash': self.hash}
 
-    def encode(self) -> bytes:
-        return json.dumps(self.to_dict()).encode()
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict())
 
     def __eq__(self, other: File) -> bool:
         return self.name == other.name and self.hash == other.hash
@@ -75,8 +79,8 @@ class Directory:
     def to_dict(self) -> dict:
         return {'type': 'directory', 'name': self.name, 'contents': [c.to_dict() for c in self.contents]}
 
-    def encode(self) -> bytes:
-        return json.dumps(self.to_dict()).encode()
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict())
 
     def __eq__(self, other: Directory) -> bool:
         return self.name == other.name and self.contents == other.contents
@@ -115,7 +119,22 @@ class ServerProtocol:
         return response
 
     async def declare_directory(self, directory: Directory):
-        pass
+        """Sends a directory structure to the server, declaring files available to download."""
+        logging.debug('Declaring directory: ' + directory.name)
+        logging.debug("Opening connection")
+        try:
+            conn = await open_connection(*self.address)
+        except ConnectionRefusedError:
+            logging.debug("Connection from server refused")
+            return False
+        logging.debug("Sending message")
+        await conn.sendall(DECLARE_DIR.format(directory.to_json()).encode())
+        await conn.shutdown(SHUT_WR) # end message signal
+        logging.debug("Message sent")
+        logging.debug("Retrieving response . . .")
+        response = await conn.recv(RECV_SIZE)
+        logging.debug("Responsed retrieved")
+        return response
 
 
     def decode(self, encoded: bytes) -> File | Directory:
@@ -158,8 +177,10 @@ class Client:
     async def cmd_status(self):
         return f'Server {"connected" if self.connected else "disconnected"}.'
 
-    async def cmd_declare_folder(self, folder: Path):
-        raise NotImplementedError
+    async def cmd_declare_folder(self, directory: Path):
+        directory = Directory.from_path(directory)
+        response = await self.server_comm.declare_directory(directory) 
+        print(response)
 
     async def cmd_quit(self):
         self.quit()
@@ -174,11 +195,12 @@ class Client:
             print(await self.cmd_ping())
         elif user_input == QUIT_INP:
             await self.cmd_quit()
+        elif user_input.startswith("declare"):
+            await self.cmd_declare_folder(user_input.split(maxsplit=1)[1])
 
     def quit(self):
         logging.debug("Sending quit signal")
         self.signals.put("quit")
-
 
     async def ping(self) -> str | bool:
         if response := await self.server_comm.ping():
