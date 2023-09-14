@@ -11,7 +11,7 @@ from hashlib import sha1
 
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
-RECV_SIZE = 1024
+RECV_SIZE = 1024 ** 2
 TRACKER_ADDRESS = "localhost", 25000
 
 # TODO: use a more generic protocol
@@ -24,7 +24,7 @@ DECLARE_DIR = 'DECLAREDIR {}'
 
 BUFSIZE = 1024**2 # one megabyte
 
-COMMANDS = ["hello", "ping", "status", "quit", "declare"]
+COMMANDS = ["hello", "ping", "status", "quit", "declare", "search"]
 
 HELLO_INP = "hello"
 PING_INP = "ping"
@@ -96,9 +96,41 @@ class Directory:
         return out + '\n}'
 
 
+def decode(encoded: str) -> File | Directory:
+    # TODO: the `loads` method can be very time consuming - use curio to put it in background
+    # TODO: validate the json
+    decode = json.loads(encoded)
+    def parse(obj: dict) -> File | Directory:
+        if obj['type'] == 'file':
+            return File(obj['name'], obj['hash'])
+        elif obj['type']== 'directory':
+            return Directory(obj['name'], [parse(c) for c in obj['contents']])
+    return parse(decode)
+
 class ServerProtocol:
     def __init__(self, address: tuple[str, int]):
+
         self.address = address
+
+    async def search(self, term: str) ->  list[Directory]:
+        pass
+        logging.debug("pinging . . .")
+        logging.debug("Opening connection")
+        try:
+            conn = await open_connection(*self.address)
+        except ConnectionRefusedError:
+            logging.debug("Connection from server refused")
+            return False
+        logging.debug("Sending message")
+        await conn.sendall(PING_MSG)
+        await conn.shutdown(SHUT_WR) # end message signal
+        logging.debug("Message sent")
+        logging.debug("Retrieving response . . .")
+        response = str(await conn.recv(RECV_SIZE))
+        print(response)
+        logging.debug("Responsed retrieved")
+        # TODO: handle decoder errors
+        return list(map(decode, response.split('###SEP###')))
 
     async def ping(self) -> bytes | bool:
         """Pings the server, returning it's response. If the server is offline returns False"""
@@ -137,17 +169,6 @@ class ServerProtocol:
         return response
 
 
-    def decode(self, encoded: bytes) -> File | Directory:
-        # TODO: the `loads` method can be very time consuming - use curio to put it in background
-        # TODO: validate the json
-        decode = json.loads(encoded.decode())
-        def parse(obj: dict) -> File | Directory:
-            if obj['type'] == 'file':
-                return File(obj['name'], obj['hash'])
-            elif obj['type']== 'directory':
-                return Directory(obj['name'], [parse(c) for c in obj['contents']])
-        return parse(decode)
-
 
 class Client:
     def __init__(self, address: tuple[str, int]):
@@ -177,13 +198,17 @@ class Client:
     async def cmd_status(self):
         return f'Server {"connected" if self.connected else "disconnected"}.'
 
-    async def cmd_declare_folder(self, directory: Path):
-        directory = Directory.from_path(directory)
+    async def cmd_declare_folder(self, directory: Directory):
         response = await self.server_comm.declare_directory(directory) 
         print(response)
 
     async def cmd_quit(self):
         self.quit()
+
+    async def cmd_search(self, term: str):
+        pass
+        response = await self.server_comm.search(term)
+        print(response)
 
     async def process_stdinput(self, user_input: str):
         """Processes a single line of user input, responding to user commands"""
@@ -196,7 +221,10 @@ class Client:
         elif user_input == QUIT_INP:
             await self.cmd_quit()
         elif user_input.startswith("declare"):
-            await self.cmd_declare_folder(user_input.split(maxsplit=1)[1])
+            dir = Directory.from_path(user_input.split(maxsplit=1)[1])
+            await self.cmd_declare_folder(dir)
+        elif user_input.startswith("search"):
+            await self.cmd_search(user_input.split(maxsplit=1)[1])
 
     def quit(self):
         logging.debug("Sending quit signal")

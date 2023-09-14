@@ -109,6 +109,7 @@ async def process_message(msg: bytearray) -> bytes:
     # first the message is unwrapped from the communication protocol
     # it is then processed
     # lastly the response is wrapped in the communication protocol and returned
+    # TODO: handle search queries
     msg = msg.decode()
     if msg == 'ping':
         print("Ping received")
@@ -119,6 +120,7 @@ async def process_message(msg: bytearray) -> bytes:
         print(dir)
         declared_dirs.append(dir)
         return f'Sure mate, {dir.name} was added'.encode()
+    # elif msg.startswith('SEARCH'): ...
 
 
 if __name__ == '__main__':
