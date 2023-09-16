@@ -13,6 +13,7 @@ A distributed file sharing application inspired by SoulSeek and Torrent written 
 - hello
 - status
 - quit
+- declare [directory]
 
 ## Getting Started
 ### Requirements
