@@ -1,6 +1,5 @@
 '''Receives commands from user and talks to server'''
 from __future__ import annotations
-# TODO: Transition from using if-else on input types to using StdSignals processing with match case.
 import logging
 from signal import signal, SIGINT
 from curio import run, run_in_thread, open_connection, spawn, TaskGroup, Queue, Kernel, UniversalQueue, sleep
@@ -21,17 +20,15 @@ DECLARE_DIR = 'DECLAREDIR {}'
 # TODO: Rewrite every command as a function with an explanation for the user
 # TODO: Add a help command
 
-BUFSIZE = 1024**2 # one megabyte
-
 COMMANDS = ["hello", "ping", "status", "quit", "declare", "search"]
 HELLO_INP = "hello"
 PING_INP = "ping"
 STATUS_INP = "status"
 QUIT_INP = "quit"
 
+
 class ServerProtocol:
     def __init__(self, address: tuple[str, int]):
-
         self.address = address
 
     async def search(self, term: str) ->  list[Directory]:
@@ -90,6 +87,18 @@ class ServerProtocol:
         logging.debug("Responsed retrieved")
         return response
 
+    async def retrieve_dirs(self) -> Directory:
+        try:
+            conn = await open_connection(*self.address)
+        except ConnectionRefusedError:
+            logging.debug("Connection from server refused")
+            return False
+        await conn.sendall(b"all")
+        await conn.shutdown(SHUT_WR) # end message signal
+
+        response = decode(await conn.recv(RECV_SIZE))
+        assert isinstance(response, Directory)
+        return response
 
 
 class Client:
@@ -132,6 +141,11 @@ class Client:
         response = await self.server_comm.search(term)
         print(response)
 
+    async def retrieve_all_dirs(self):
+        alldirs = await self.server_comm.retrieve_dirs()
+        return(str(alldirs))
+        return '\n-----------\n'.join(map(repr, alldirs.contents))
+
     async def process_stdinput(self, user_input: str):
         """Processes a single line of user input, responding to user commands"""
         if user_input == HELLO_INP:
@@ -145,6 +159,8 @@ class Client:
         elif user_input.startswith("declare"):
             dir = Directory.from_path(user_input.split(maxsplit=1)[1])
             await self.cmd_declare_folder(dir)
+        elif user_input == "ALL":
+            print(await self.retrieve_all_dirs())
         elif user_input.startswith("search"):
             await self.cmd_search(user_input.split(maxsplit=1)[1])
 
@@ -192,8 +208,6 @@ class Client:
                     logging.debug("Quit msg received; Closing . . .")
                     print("Client shutting down")
                     return
-                #case StdInput(user_input): # no longer useful
-                #    logging.debug("STDIN: " + str(user_input))
                 case "online":
                     logging.debug("Server online")
                     print("Server online")

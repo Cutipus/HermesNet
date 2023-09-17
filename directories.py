@@ -1,8 +1,9 @@
 from __future__ import annotations
-
 from pathlib import Path
+from hashlib import sha1
 import json
 
+BUFSIZE = 1024 ** 2
 
 class File:
     def __init__(self, name: str, hash: str):
