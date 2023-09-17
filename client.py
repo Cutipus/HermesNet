@@ -5,7 +5,7 @@ from signal import signal, SIGINT
 from curio import run, run_in_thread, open_connection, spawn, TaskGroup, Queue, Kernel, UniversalQueue, sleep
 from socket import SHUT_WR
 from hashlib import sha1
-
+import json
 from directories import File, Directory, decode
 
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
@@ -46,7 +46,6 @@ class ServerProtocol:
         logging.debug("Message sent")
         logging.debug("Retrieving response . . .")
         response = str(await conn.recv(RECV_SIZE))
-        print(response)
         logging.debug("Responsed retrieved")
         # TODO: handle decoder errors
         return list(map(decode, response.split('###SEP###')))
@@ -100,6 +99,21 @@ class ServerProtocol:
         assert isinstance(response, Directory)
         return response
 
+    async def download(self, hash) -> list[str]:
+        try:
+            conn = await open_connection(*self.address)
+        except ConnectionRefusedError:
+            logging.debug("Connection from server refused")
+            return False
+        await conn.sendall(f"download {hash}".encode())
+        await conn.shutdown(SHUT_WR) # end message signal
+
+        response = (await conn.recv(RECV_SIZE)).decode()
+        if response == 'NOUSERS':
+            return 'NOUSERS'
+        else:
+            return json.loads(response)
+
 
 class Client:
     def __init__(self, address: tuple[str, int]):
@@ -136,15 +150,17 @@ class Client:
     async def cmd_quit(self):
         self.quit()
 
-    async def cmd_search(self, term: str):
-        pass
-        response = await self.server_comm.search(term)
-        print(response)
+    #async def cmd_search(self, term: str):
+    #    pass
+    #    response = await self.server_comm.search(term)
+    #    print(response)
 
     async def retrieve_all_dirs(self):
         alldirs = await self.server_comm.retrieve_dirs()
         return(str(alldirs))
-        return '\n-----------\n'.join(map(repr, alldirs.contents))
+
+    async def cmd_download(self, hash: str):
+        return(await self.server_comm.download(hash))
 
     async def process_stdinput(self, user_input: str):
         """Processes a single line of user input, responding to user commands"""
@@ -161,8 +177,10 @@ class Client:
             await self.cmd_declare_folder(dir)
         elif user_input == "ALL":
             print(await self.retrieve_all_dirs())
-        elif user_input.startswith("search"):
-            await self.cmd_search(user_input.split(maxsplit=1)[1])
+        #elif user_input.startswith("search"):
+        #    print(await self.cmd_search(user_input.split(maxsplit=1)[1]))
+        elif user_input.startswith("download"):
+            print(await self.cmd_download(user_input.split(maxsplit=1)[1]))
 
     def quit(self):
         logging.debug("Sending quit signal")

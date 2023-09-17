@@ -4,20 +4,28 @@ from signal import signal, SIGINT
 from curio import run, tcp_server
 from directories import File, Directory, decode
 import json
+from collections import defaultdict
 
 
 KILOBYTE = 1024
 declared_dirs = []
+files: defaultdict[str, set[str]] = defaultdict(set)
 
 
-def add_user_dir(dir: Directory):
+def add_user_dir(clientaddr, dir: Directory):
+    print('adding folder', dir.name, 'from client', clientaddr)
     declared_dirs.append(dir)
 
+    def get_all_file_hashes(dir: Directory):
+        for x in dir.contents:
+            match x:
+                case File():
+                    yield(x.hash)
+                case Directory():
+                    yield from get_all_file_hashes(x)
 
-class ServerFile:
-    def __init__(self, hash: str, in_dirs: list[Subdir]):
-        self.hash = hash
-        self.parent_dirs = in_dirs
+    for filehash in get_all_file_hashes(dir):
+        files[filehash].add(clientaddr)
 
 
 async def receive_message(client, addr):
@@ -30,12 +38,12 @@ async def receive_message(client, addr):
             break
         msg += data
     logging.info('Message received')
-    response = await process_message(msg)
-    print(f'Sending response: {response.decode())}')
+    response = await process_message(addr, msg)
+    print(f'Sending response: {response.decode()}')
     await client.sendall(response)
 
 
-async def process_message(msg: bytearray) -> bytes:
+async def process_message(clientaddr, msg: bytearray) -> bytes:
     # parses the message and returns a reply
     # this server should return the ip addresses and data ranges of clients for specific files
     # therefore, the msg should include info on the file in question
@@ -54,11 +62,17 @@ async def process_message(msg: bytearray) -> bytes:
         logging.debug("Dir declaration received")
         dir = decode(msg.split(maxsplit=1)[1])
         logging.info(dir)
-        add_user_dir(dir)
+        add_user_dir(clientaddr, dir)
         return f'Sure mate, {dir.name} was added'.encode()
     elif msg == 'all':
         print(declared_dirs)
         return Directory('ALL FILES', declared_dirs).to_json().encode()
+    elif msg.startswith('download'):
+        filehash = msg.split(maxsplit=1)[1]
+        if users_with_file := files.get(filehash):
+            return json.dumps(list(users_with_file)).encode()
+        else:
+            return b'NOUSERS'
 
 
 if __name__ == '__main__':
