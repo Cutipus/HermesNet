@@ -8,109 +8,52 @@ from hashlib import sha1
 import json
 from directories import File, Directory, decode
 
+# TODO: use a more generic protocol
+# TODO: Rewrite every command as a function with an explanation for the user
+# TODO: Add a help command
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
 RECV_SIZE = 1024 ** 2
 TRACKER_ADDRESS = "localhost", 25000
-
-# TODO: use a more generic protocol
-PING_MSG = b"ping"
 DECLARE_DIR = 'DECLAREDIR {}'
-
-# TODO: Rewrite every command as a function with an explanation for the user
-# TODO: Add a help command
-
-COMMANDS = ["hello", "ping", "status", "quit", "declare", "search"]
-HELLO_INP = "hello"
-PING_INP = "ping"
-STATUS_INP = "status"
-QUIT_INP = "quit"
+COMMANDS = ["hello", "ping", "status", "quit", "declare [directory]", "all", "query [file hash]"]
 
 
 class ServerProtocol:
     def __init__(self, address: tuple[str, int]):
         self.address = address
 
-    async def search(self, term: str) ->  list[Directory]:
-        pass
-        logging.debug("pinging . . .")
-        logging.debug("Opening connection")
-        try:
-            conn = await open_connection(*self.address)
-        except ConnectionRefusedError:
-            logging.debug("Connection from server refused")
-            return False
+    async def send_message(self, message: bytes) -> bytes:
+        '''Sends a message to the server and retrieves a response, may raise ConnectionRefusedError'''
         logging.debug("Sending message")
-        await conn.sendall(PING_MSG)
+        conn = await open_connection(*self.address)
+        await conn.sendall(message)
         await conn.shutdown(SHUT_WR) # end message signal
-        logging.debug("Message sent")
-        logging.debug("Retrieving response . . .")
-        response = str(await conn.recv(RECV_SIZE))
-        logging.debug("Responsed retrieved")
-        # TODO: handle decoder errors
-        return list(map(decode, response.split('###SEP###')))
+        return await conn.recv(RECV_SIZE) # TODO: retrieve until shutdown instead
 
-    async def ping(self) -> bytes | bool:
-        """Pings the server, returning it's response. If the server is offline returns False"""
-        logging.debug("pinging . . .")
-        logging.debug("Opening connection")
+    async def ping(self) -> bool:
+        """Pings the server, returning True if server is online, otherwise returns False"""
         try:
-            conn = await open_connection(*self.address)
+            await self.send_message(b'ping')
+            return True
         except ConnectionRefusedError:
-            logging.debug("Connection from server refused")
             return False
-        logging.debug("Sending message")
-        await conn.sendall(PING_MSG)
-        await conn.shutdown(SHUT_WR) # end message signal
-        logging.debug("Message sent")
-        logging.debug("Retrieving response . . .")
-        response = await conn.recv(RECV_SIZE)
-        logging.debug("Responsed retrieved")
-        return response
 
     async def declare_directory(self, directory: Directory):
         """Sends a directory structure to the server, declaring files available to download."""
-        logging.debug('Declaring directory: ' + directory.name)
-        logging.debug("Opening connection")
-        try:
-            conn = await open_connection(*self.address)
-        except ConnectionRefusedError:
-            logging.debug("Connection from server refused")
-            return False
-        logging.debug("Sending message")
-        await conn.sendall(DECLARE_DIR.format(directory.to_json()).encode())
-        await conn.shutdown(SHUT_WR) # end message signal
-        logging.debug("Message sent")
-        logging.debug("Retrieving response . . .")
-        response = await conn.recv(RECV_SIZE)
-        logging.debug("Responsed retrieved")
-        return response
+        return await self.send_message(DECLARE_DIR.format(directory.to_json()).encode())
 
     async def retrieve_dirs(self) -> Directory:
-        try:
-            conn = await open_connection(*self.address)
-        except ConnectionRefusedError:
-            logging.debug("Connection from server refused")
-            return False
-        await conn.sendall(b"all")
-        await conn.shutdown(SHUT_WR) # end message signal
-
-        response = decode(await conn.recv(RECV_SIZE))
+        '''Requests a list of all the declared directories from the server. Returns an "ALL" directory with all the directories as subdirs.'''
+        response = decode(await self.send_message(b'all'))
         assert isinstance(response, Directory)
         return response
 
-    async def download(self, hash) -> list[str]:
-        try:
-            conn = await open_connection(*self.address)
-        except ConnectionRefusedError:
-            logging.debug("Connection from server refused")
-            return False
-        await conn.sendall(f"download {hash}".encode())
-        await conn.shutdown(SHUT_WR) # end message signal
-
-        response = (await conn.recv(RECV_SIZE)).decode()
+    async def query_file(self, filehash: str) -> list[str]:
+        '''Asks the server for a list of clients with the file, returns empty list of no users have it.'''
+        response = (await self.send_message(f"download {hash}".encode())).decode()
         if response == 'NOUSERS':
-            return 'NOUSERS'
+            return []
         else:
             return json.loads(response)
 
@@ -121,6 +64,13 @@ class Client:
         self.server_comm = ServerProtocol(self.address)
         self.connected = None # None if not pinged yet
         self.signals = UniversalQueue()
+        self.commands: dict = {}
+
+    #def command(self, cmdname: str):
+    #    def wrapped(func):
+    #        self.commands[cmdname] = func
+    #        return func
+    #    return wrapped
 
     async def run(self):
         print(f"Available commands: {', '.join(COMMANDS)}")
@@ -131,90 +81,11 @@ class Client:
             await g.spawn(self.auto_pinger)
             print("Connecting... Please wait")
 
-    async def cmd_hello(self):
-        return 'meow'
-
-    async def cmd_ping(self):
-        if response := await self.ping():
-            return f'Ping OK: "{response}"'
-        else:
-            return "Ping failed"
-
-    async def cmd_status(self):
-        return f'Server {"connected" if self.connected else "disconnected"}.'
-
-    async def cmd_declare_folder(self, directory: Directory):
-        response = await self.server_comm.declare_directory(directory) 
-        print(response)
-
-    async def cmd_quit(self):
-        self.quit()
-
-    #async def cmd_search(self, term: str):
-    #    pass
-    #    response = await self.server_comm.search(term)
-    #    print(response)
-
-    async def retrieve_all_dirs(self):
-        alldirs = await self.server_comm.retrieve_dirs()
-        return(str(alldirs))
-
-    async def cmd_download(self, hash: str):
-        return(await self.server_comm.download(hash))
-
-    async def process_stdinput(self, user_input: str):
-        """Processes a single line of user input, responding to user commands"""
-        if user_input == HELLO_INP:
-            print(await self.cmd_hello())
-        elif user_input == STATUS_INP:
-            print(await self.cmd_status())
-        elif user_input == PING_INP:
-            print(await self.cmd_ping())
-        elif user_input == QUIT_INP:
-            await self.cmd_quit()
-        elif user_input.startswith("declare"):
-            dir = Directory.from_path(user_input.split(maxsplit=1)[1])
-            await self.cmd_declare_folder(dir)
-        elif user_input == "ALL":
-            print(await self.retrieve_all_dirs())
-        #elif user_input.startswith("search"):
-        #    print(await self.cmd_search(user_input.split(maxsplit=1)[1]))
-        elif user_input.startswith("download"):
-            print(await self.cmd_download(user_input.split(maxsplit=1)[1]))
-
-    def quit(self):
-        logging.debug("Sending quit signal")
-        self.signals.put("quit")
-
-    async def ping(self) -> str | bool:
-        if response := await self.server_comm.ping():
-            logging.debug("Ping successful - server online")
-            if self.connected != True:
-                await self.signals.put("online")
-            self.connected = True
-            return response.decode()
-        else:
-            logging.debug("Ping unsuccessful - server offline")
-            if self.connected != False:
-                await self.signals.put("offline")
-            self.connected = False
-            return False
-
     async def auto_pinger(self):
         """Indefinitely pings the server, updating `self.connected` accordingly."""
         while True:
-            await self.ping()
+            await self.cmd_ping()
             await sleep(20)
-
-    async def stdinput_loop(self):
-        """Indefinitely reads user input from a different thread and processes it"""
-        async with TaskGroup() as g:
-            while True:
-                try:
-                    user_input = await run_in_thread(input)
-                    await g.spawn(self.process_stdinput, user_input)
-                except EOFError:
-                    logging.debug("End of input")
 
     async def events_loop(self):
         """Reads client-related events"""
@@ -234,6 +105,67 @@ class Client:
                     print("Server offline")
                 case _:
                     print("Nothing?")
+
+    async def stdinput_loop(self):
+        """Indefinitely reads user input from a different thread and processes it"""
+        async with TaskGroup() as g:
+            while True:
+                try:
+                    user_input = await run_in_thread(input)
+                    await g.spawn(self.process_stdinput, user_input)
+                except EOFError:
+                    logging.debug("End of input")
+
+    async def process_stdinput(self, user_input: str):
+        """Processes a single line of user input, responding to user commands"""
+        if user_input == 'hello':
+            print(await self.cmd_hello())
+        elif user_input == 'status':
+            print(await self.cmd_status())
+        elif user_input == 'ping':
+            print(await self.cmd_ping())
+        elif user_input == 'quit':
+            print(self.quit())
+        elif user_input.startswith("declare"):
+            print(await self.cmd_declare_folder(Directory.from_path(user_input.split(maxsplit=1)[1])))
+        elif user_input == "all":
+            print(await self.retrieve_all_dirs())
+        elif user_input.startswith("query"):
+            print(await self.cmd_download(user_input.split(maxsplit=1)[1]))
+
+    async def cmd_hello(self) -> str:
+        return 'meow'
+
+    async def cmd_ping(self) -> str:
+        if await self.server_comm.ping():
+            logging.debug("Ping successful - server online")
+            if self.connected != True:
+                await self.signals.put("online")
+            self.connected = True
+            return 'Online'
+        else:
+            logging.debug("Ping unsuccessful - server offline")
+            if self.connected != False:
+                await self.signals.put("offline")
+            self.connected = False
+            return 'Offline'
+
+    async def cmd_status(self) -> str:
+        return f'Server {"connected" if self.connected else "disconnected"}.'
+
+    async def cmd_declare_folder(self, directory: Directory) -> str:
+        return await self.server_comm.declare_directory(directory) 
+
+    async def retrieve_all_dirs(self) -> str:
+        return str(await self.server_comm.retrieve_dirs())
+
+    async def cmd_query_file(self, hash: str) -> str:
+        return(await self.server_comm.query_file(hash))
+
+    def quit(self) -> str:
+        logging.debug("Sending quit signal")
+        self.signals.put("quit")
+        return 'Quitting...'
 
 
 async def main():
