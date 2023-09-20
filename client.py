@@ -9,15 +9,22 @@ import json
 from directories import File, Directory, decode
 
 # TODO: use a more generic protocol
-# TODO: Rewrite every command as a function with an explanation for the user
 # TODO: Add a help command
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
 RECV_SIZE = 1024 ** 2
 TRACKER_ADDRESS = "localhost", 25000
 DECLARE_DIR = 'DECLAREDIR {}'
-COMMANDS = ["hello", "ping", "status", "quit", "declare [directory]", "all", "query [file hash]"]
-
+COMMANDS = ["hello", "ping", "status", "quit", "declare [directory]", "all", "query [file hash]", "help"]
+HELPTEXT = """\
+ping                    Pings the server - prints if it's online or offline
+hello                   Prints "meow"
+status                  Prints the server's online status without pinging
+quit                    Exits the client
+declare [directory]     Declares a directory (recursively) to the server, sending file hashes information and file/directory names
+all                     Prints all declared directories in the server from all clients
+query [file hash]       Requests a list of all clients that declared a file which hash matches the given hash
+"""
 
 class ServerProtocol:
     def __init__(self, address: tuple[str, int]):
@@ -66,12 +73,6 @@ class Client:
         self.signals = UniversalQueue()
         self.commands: dict = {}
 
-    #def command(self, cmdname: str):
-    #    def wrapped(func):
-    #        self.commands[cmdname] = func
-    #        return func
-    #    return wrapped
-
     async def run(self):
         print(f"Available commands: {', '.join(COMMANDS)}")
         signal(SIGINT, lambda signo, frame: self.quit())
@@ -119,7 +120,9 @@ class Client:
     async def process_stdinput(self, user_input: str):
         """Processes a single line of user input, responding to user commands"""
         if user_input == 'hello':
-            print(await self.cmd_hello())
+            print('meow')
+        elif user_input == 'help':
+            print(HELPTEXT)
         elif user_input == 'status':
             print(await self.cmd_status())
         elif user_input == 'ping':
@@ -132,9 +135,6 @@ class Client:
             print(await self.retrieve_all_dirs())
         elif user_input.startswith("query"):
             print(await self.cmd_download(user_input.split(maxsplit=1)[1]))
-
-    async def cmd_hello(self) -> str:
-        return 'meow'
 
     async def cmd_ping(self) -> str:
         if await self.server_comm.ping():

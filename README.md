@@ -18,6 +18,7 @@ A distributed file sharing application inspired by SoulSeek and Torrent written 
 | declare [directory] | Declares a directory (recursively) to the server, sending file hashes information and file/directory names |
 | all                 | Prints all declared directories in the server from all clients                                             |
 | query [file hash]   | Requests a list of all clients that declared a file which hash matches the given hash                      |
+| help                | Prints this table                                                                                          |
 
 
 ## Getting Started
