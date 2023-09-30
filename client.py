@@ -7,6 +7,7 @@ from socket import SHUT_WR
 from hashlib import sha1
 import json
 from directories import File, Directory, decode
+from pathlib import Path
 
 # TODO: use a more generic protocol
 # TODO: Add a help command
@@ -24,6 +25,7 @@ quit                    Exits the client
 declare [directory]     Declares a directory (recursively) to the server, sending file hashes information and file/directory names
 all                     Prints all declared directories in the server from all clients
 query [file hash]       Requests a list of all clients that declared a file which hash matches the given hash
+help                    Print this
 """
 
 class ServerProtocol:
@@ -46,23 +48,31 @@ class ServerProtocol:
         except ConnectionRefusedError:
             return False
 
-    async def declare_directory(self, directory: Directory):
-        """Sends a directory structure to the server, declaring files available to download."""
-        return await self.send_message(DECLARE_DIR.format(directory.to_json()).encode())
-
     async def retrieve_dirs(self) -> Directory:
-        '''Requests a list of all the declared directories from the server. Returns an "ALL" directory with all the directories as subdirs.'''
-        response = decode(await self.send_message(b'all'))
+        '''
+        Requests a list of all the declared directories from the server. Returns an "ALL" directory with all the directories as subdirs.
+        Can raise ConnectionRefusedError if server is offline
+        '''
+        response = decode(await self.send_message(b'ALL'))
         assert isinstance(response, Directory)
         return response
 
+    async def declare_directory(self, directory: Directory | Path | str) -> list[str]:
+        '''
+        Sends a directory structure to the server, declaring files available to download.
+        Can raise ConnectionRefusedError if server is offline
+        Can raise FileNotFoundError if can't find the directory - will raise before ConnectionRefusedError
+        '''
+        if not isinstance(directory, Directory):
+            directory = Directory.from_path(directory)
+        return await self.send_message(DECLARE_DIR.format(directory.to_json()).encode()) # what does it return?
+
     async def query_file(self, filehash: str) -> list[str]:
         '''Asks the server for a list of clients with the file, returns empty list of no users have it.'''
-        response = (await self.send_message(f"download {hash}".encode())).decode()
+        response = (await self.send_message(f"QUERY {filehash}".encode())).decode()
         if response == 'NOUSERS':
             return []
-        else:
-            return json.loads(response)
+        return json.loads(response)
 
 
 class Client:
@@ -124,43 +134,32 @@ class Client:
         elif user_input == 'help':
             print(HELPTEXT)
         elif user_input == 'status':
-            print(await self.cmd_status())
+            print(f'Server {"connected" if self.connected else "disconnected"}.')
         elif user_input == 'ping':
             print(await self.cmd_ping())
         elif user_input == 'quit':
             print(self.quit())
         elif user_input.startswith("declare"):
-            print(await self.cmd_declare_folder(Directory.from_path(user_input.split(maxsplit=1)[1])))
+            print(await self.server_comm.declare_directory((Directory.from_path(user_input.split(maxsplit=1)[1]))))
         elif user_input == "all":
-            print(await self.retrieve_all_dirs())
+            print(str(await self.server_comm.retrieve_dirs()))
         elif user_input.startswith("query"):
-            print(await self.cmd_download(user_input.split(maxsplit=1)[1]))
+            print(await self.server_comm.query_file(user_input.split(maxsplit=1)[1]))
 
-    async def cmd_ping(self) -> str:
+    async def cmd_ping(self) -> bool:
+        '''Pings the server, returns True if online, otherwise False. Updates self.connected.'''
         if await self.server_comm.ping():
             logging.debug("Ping successful - server online")
             if self.connected != True:
                 await self.signals.put("online")
             self.connected = True
-            return 'Online'
+            return True
         else:
             logging.debug("Ping unsuccessful - server offline")
             if self.connected != False:
                 await self.signals.put("offline")
             self.connected = False
-            return 'Offline'
-
-    async def cmd_status(self) -> str:
-        return f'Server {"connected" if self.connected else "disconnected"}.'
-
-    async def cmd_declare_folder(self, directory: Directory) -> str:
-        return await self.server_comm.declare_directory(directory) 
-
-    async def retrieve_all_dirs(self) -> str:
-        return str(await self.server_comm.retrieve_dirs())
-
-    async def cmd_query_file(self, hash: str) -> str:
-        return(await self.server_comm.query_file(hash))
+            return False
 
     def quit(self) -> str:
         logging.debug("Sending quit signal")

@@ -30,7 +30,7 @@ def add_user_dir(clientaddr, dir: Directory):
 
 async def receive_message(client, addr):
     # responsible for retrieving a single request from a client
-    logging.debug('Connection from', addr)
+    logging.debug(f'Connection from {addr}')
     msg = bytearray()
     while True:
         data = await client.recv(KILOBYTE)
@@ -64,15 +64,14 @@ async def process_message(clientaddr, msg: bytearray) -> bytes:
         logging.info(dir)
         add_user_dir(clientaddr, dir)
         return f'Sure mate, {dir.name} was added'.encode()
-    elif msg == 'all':
+    elif msg == 'ALL':
         print(declared_dirs)
         return Directory('ALL FILES', declared_dirs).to_json().encode()
-    elif msg.startswith('download'):
+    elif msg.startswith('QUERY'):
         filehash = msg.split(maxsplit=1)[1]
         if users_with_file := files.get(filehash):
             return json.dumps(list(users_with_file)).encode()
-        else:
-            return b'NOUSERS'
+        return b'NOUSERS'
 
 
 if __name__ == '__main__':

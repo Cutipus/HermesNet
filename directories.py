@@ -39,8 +39,8 @@ class Directory:
         self.contents = contents
 
     @classmethod
-    def from_path(cls, path: Path) -> FileTree:
-        path = Path(path) # extra verification
+    def from_path(cls, path: Path | str) -> FileTree:
+        path = Path(path)
         contents = []
         for x in path.iterdir():
             if x.is_file():
