@@ -1,16 +1,13 @@
-'''Receives commands from user and talks to server'''
+"""Receives commands from user and talks to server.#!/usr/bin/env python."""
 from __future__ import annotations
 import logging
 from signal import signal, SIGINT
-from curio import run, run_in_thread, open_connection, spawn, TaskGroup, Queue, Kernel, UniversalQueue, sleep
+from curio import run, run_in_thread, open_connection, TaskGroup, UniversalQueue, sleep
 from socket import SHUT_WR
-from hashlib import sha1
+from directories import Directory, decode
 import json
-from directories import File, Directory, decode
 from pathlib import Path
 
-# TODO: use a more generic protocol
-# TODO: Add a help command
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
 RECV_SIZE = 1024 ** 2
@@ -28,20 +25,30 @@ query [file hash]       Requests a list of all clients that declared a file whic
 help                    Print this
 """
 
+
 class ServerProtocol:
+    """The protocol to communicate with the server."""
+
     def __init__(self, address: tuple[str, int]):
+        """Initialize the server communication with the server address."""
         self.address = address
 
     async def send_message(self, message: bytes) -> bytes:
-        '''Sends a message to the server and retrieves a response, may raise ConnectionRefusedError'''
+        """Send a message to the server and retrieves a response.
+
+        May raise ConnectionRefusedError.
+        """
         logging.debug("Sending message")
         conn = await open_connection(*self.address)
         await conn.sendall(message)
-        await conn.shutdown(SHUT_WR) # end message signal
-        return await conn.recv(RECV_SIZE) # TODO: retrieve until shutdown instead
+        await conn.shutdown(SHUT_WR)  # end message signal
+        msg = bytearray()
+        while data := await conn.recv(RECV_SIZE):
+            msg += data
+        return msg.decode()
 
     async def ping(self) -> bool:
-        """Pings the server, returning True if server is online, otherwise returns False"""
+        """Pings the server, returning True if server is online else False."""
         try:
             await self.send_message(b'ping')
             return True
@@ -49,41 +56,46 @@ class ServerProtocol:
             return False
 
     async def retrieve_dirs(self) -> Directory:
-        '''
-        Requests a list of all the declared directories from the server. Returns an "ALL" directory with all the directories as subdirs.
+        """Request a list of all the declared directories from the server.
+
+        Returns an "ALL" directory with all the directories as subdirs.
         Can raise ConnectionRefusedError if server is offline
-        '''
+        """
         response = decode(await self.send_message(b'ALL'))
         assert isinstance(response, Directory)
         return response
 
     async def declare_directory(self, directory: Directory | Path | str) -> list[str]:
-        '''
-        Sends a directory structure to the server, declaring files available to download.
+        """Send a directory structure to the server, declaring files available.
+
         Can raise ConnectionRefusedError if server is offline
-        Can raise FileNotFoundError if can't find the directory - will raise before ConnectionRefusedError
-        '''
+        Can raise FileNotFoundError if can't find the directory
+        """
         if not isinstance(directory, Directory):
             directory = Directory.from_path(directory)
-        return await self.send_message(DECLARE_DIR.format(directory.to_json()).encode()) # what does it return?
+        return await self.send_message(DECLARE_DIR.format(directory.to_json()).encode())
 
     async def query_file(self, filehash: str) -> list[str]:
-        '''Asks the server for a list of clients with the file, returns empty list of no users have it.'''
-        response = (await self.send_message(f"QUERY {filehash}".encode())).decode()
+        """Query a file by hash from the server, returns a list of clients."""
+        response = (await self.send_message(f"QUERY {filehash}".encode()))
         if response == 'NOUSERS':
             return []
         return json.loads(response)
 
 
 class Client:
+    """The client receiving commands from user, interacting with the server."""
+
     def __init__(self, address: tuple[str, int]):
+        """Initialize client with server's address."""
         self.address = address
         self.server_comm = ServerProtocol(self.address)
-        self.connected = None # None if not pinged yet
+        self.connected = None  # None if not pinged yet
         self.signals = UniversalQueue()
         self.commands: dict = {}
 
     async def run(self):
+        """Start the client daemons and REPL."""
         print(f"Available commands: {', '.join(COMMANDS)}")
         signal(SIGINT, lambda signo, frame: self.quit())
         async with TaskGroup(wait=any) as g:
@@ -93,13 +105,13 @@ class Client:
             print("Connecting... Please wait")
 
     async def auto_pinger(self):
-        """Indefinitely pings the server, updating `self.connected` accordingly."""
+        """Indefinitely ping the server, updating connection status."""
         while True:
             await self.cmd_ping()
             await sleep(20)
 
     async def events_loop(self):
-        """Reads client-related events"""
+        """Read client-related events."""
         while True:
             signal = await self.signals.get()
             print('!EVENT! ', end='')
@@ -118,7 +130,7 @@ class Client:
                     print("Nothing?")
 
     async def stdinput_loop(self):
-        """Indefinitely reads user input from a different thread and processes it"""
+        """User input REPL."""
         async with TaskGroup() as g:
             while True:
                 try:
@@ -128,7 +140,7 @@ class Client:
                     logging.debug("End of input")
 
     async def process_stdinput(self, user_input: str):
-        """Processes a single line of user input, responding to user commands"""
+        """Process a single line of user input, responding to user commands."""
         if user_input == 'hello':
             print('meow')
         elif user_input == 'help':
@@ -147,7 +159,10 @@ class Client:
             print(await self.server_comm.query_file(user_input.split(maxsplit=1)[1]))
 
     async def cmd_ping(self) -> bool:
-        '''Pings the server, returns True if online, otherwise False. Updates self.connected.'''
+        """Ping the server, return True if online, otherwise False.
+
+        Side effect: updates `self.connected`.
+        """
         if await self.server_comm.ping():
             logging.debug("Ping successful - server online")
             if self.connected != True:
@@ -162,12 +177,14 @@ class Client:
             return False
 
     def quit(self) -> str:
+        """Close the client."""
         logging.debug("Sending quit signal")
         self.signals.put("quit")
         return 'Quitting...'
 
 
 async def main():
+    """Start the client."""
     client = Client(TRACKER_ADDRESS)
     await client.run()
 

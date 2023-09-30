@@ -1,3 +1,4 @@
+"""Shared library between client and server."""
 from __future__ import annotations
 from pathlib import Path
 from hashlib import sha1
@@ -5,13 +6,18 @@ import json
 
 BUFSIZE = 1024 ** 2
 
+
 class File:
+    """Represents a file in a directory hierarchy."""
+
     def __init__(self, name: str, hash: str):
+        """Create file parameterized by name and its hash."""
         self.name = name
         self.hash = hash
 
     @classmethod
-    def from_path(cls, path: Path):
+    def from_path(cls, path: Path) -> File:
+        """Create a file from a file location on system, calculating hash."""
         name = path.name
         filehash = sha1()
         with path.open() as f:
@@ -21,25 +27,37 @@ class File:
         return cls(name, hash)
 
     def to_dict(self) -> dict:
-        return {'type': 'file', 'name': self.name, 'hash': self.hash}
+        """Represent the file as a dict for JSON processing."""
+        return {
+            'type': 'file',
+            'name': self.name,
+            'hash': self.hash
+        }
 
     def to_json(self) -> str:
+        """Represent the file as a JSON string."""
         return json.dumps(self.to_dict())
 
     def __eq__(self, other: File) -> bool:
+        """Allow comparing files."""
         return self.name == other.name and self.hash == other.hash
 
     def __repr__(self):
+        """Represent a file as string."""
         return f'{self.name}[{self.hash}]'
 
 
 class Directory:
+    """Represents a recursive directory holding files and subdirectories."""
+
     def __init__(self, name: str, contents: list[Directory | File]):
+        """Initialize a directory with a name and a list of contents."""
         self.name = name
         self.contents = contents
 
     @classmethod
     def from_path(cls, path: Path | str) -> FileTree:
+        """Create a directory from a directory path in file system."""
         path = Path(path)
         contents = []
         for x in path.iterdir():
@@ -50,15 +68,23 @@ class Directory:
         return Directory(path.name, contents)
 
     def to_dict(self) -> dict:
-        return {'type': 'directory', 'name': self.name, 'contents': [c.to_dict() for c in self.contents]}
+        """Represent dictionary as dict."""
+        return {
+            'type': 'directory',
+            'name': self.name,
+            'contents': [c.to_dict() for c in self.contents]
+        }
 
     def to_json(self) -> str:
+        """Represent directory as JSON str."""
         return json.dumps(self.to_dict())
 
     def __eq__(self, other: Directory) -> bool:
+        """Compare two directories recursively."""
         return self.name == other.name and self.contents == other.contents
 
     def __repr__(self):
+        """Represent a directory as string."""
         out = self.name + "{\n"
         for x in self.contents:
             match x:
@@ -70,13 +96,15 @@ class Directory:
 
 
 def decode(encoded: str) -> File | Directory:
-    # TODO: the `loads` method can be very time consuming - use curio to put it in background
+    """Decode a json directory structure to class."""
+    # TODO: process `loads` using curio in background
     # TODO: validate the json
     decode = json.loads(encoded)
+
     def parse(obj: dict) -> File | Directory:
         if obj['type'] == 'file':
             return File(obj['name'], obj['hash'])
         elif obj['type']== 'directory':
             return Directory(obj['name'], [parse(c) for c in obj['contents']])
-    return parse(decode)
 
+    return parse(decode)
