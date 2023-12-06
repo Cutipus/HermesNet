@@ -38,6 +38,10 @@ class File:
         """Represent the file as a JSON string."""
         return json.dumps(self.to_dict())
 
+    def copy(self) -> File:
+        """Create a copy of the file."""
+        return File(self.name, self.hash)
+
     def __eq__(self, other: File) -> bool:
         """Allow comparing files."""
         return self.name == other.name and self.hash == other.hash
@@ -74,6 +78,10 @@ class Directory:
             'name': self.name,
             'contents': [c.to_dict() for c in self.contents]
         }
+
+    def copy(self) -> Directory:
+        """Create a copy of the directory."""
+        return Directory(self.name, [x.copy() for x in self.contents])
 
     def to_json(self) -> str:
         """Represent directory as JSON str."""

@@ -12,6 +12,26 @@ declared_dirs = []
 files: defaultdict[str, set[str]] = defaultdict(set)
 
 
+def search_user_dir(dir: Directory, term: str) -> Directory:
+    """Search a term in a user directory, returns False if no matches."""
+    search_result = dir.copy()
+
+    def search(x: Directory | File) -> bool:
+        if term in x.name:
+            return True
+        match x:
+            case File():
+                return False
+            case Directory():
+                x.contents = [y for y in x.contents if search(y)]
+                return x.contents != []
+
+    if not search(search_result):
+        return False
+    else:
+        return search_result
+
+
 def add_user_dir(clientaddr, dir: Directory):
     """Register a user directory, recursively adding files into `files`."""
     declared_dirs.append(dir)
