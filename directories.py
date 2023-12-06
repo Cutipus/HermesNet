@@ -85,14 +85,21 @@ class Directory:
 
     def __repr__(self):
         """Represent a directory as string."""
-        out = self.name + "{\n"
-        for x in self.contents:
-            match x:
-                case File():
-                    out += '    ' + repr(x) + "\n"
-                case Directory():
-                    out += '    ' + repr(x).replace("\n", "\n    ") + '\n'
-        return out + '\n}'
+        out = self.name
+        if not self.contents:
+            out += '/{}'
+        elif len(self.contents) == 1:
+            out += '/' + repr(self.contents[0])
+        else:
+            out += "{"
+            for x in self.contents:
+                match x:
+                    case File():
+                        out += '\n    ' + repr(x)
+                    case Directory():
+                        out += '\n    ' + repr(x).replace("\n", "\n    ")
+            out += '\n}'
+        return out
 
 
 def decode(encoded: str) -> File | Directory:
