@@ -60,7 +60,7 @@ class Directory:
         self.contents = contents
 
     @classmethod
-    def from_path(cls, path: Path | str) -> FileTree:
+    def from_path(cls, path: Path | str) -> Directory:
         """Create a directory from a directory path in file system."""
         path = Path(path)
         contents = []
@@ -119,7 +119,7 @@ def decode(encoded: str) -> File | Directory:
     def parse(obj: dict) -> File | Directory:
         if obj['type'] == 'file':
             return File(obj['name'], obj['hash'])
-        elif obj['type']== 'directory':
+        elif obj['type'] == 'directory':
             return Directory(obj['name'], [parse(c) for c in obj['contents']])
 
     return parse(decode)
