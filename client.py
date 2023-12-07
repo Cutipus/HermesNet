@@ -34,7 +34,7 @@ class ServerProtocol:
         """Initialize the server communication with the server address."""
         self.address = address
 
-    async def send_message(self, message: bytes) -> bytes:
+    async def send_message(self, message: bytes) -> str:
         """Send a message to the server and retrieves a response.
 
         May raise ConnectionRefusedError.
@@ -81,6 +81,7 @@ class ServerProtocol:
         response = (await self.send_message(f"QUERY {filehash}".encode()))
         if response == 'NOUSERS':
             return []
+        # BUG: May raise JSON parsing error
         return json.loads(response)
 
     async def search(self, search_term: str) -> list[Directory]:

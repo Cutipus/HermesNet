@@ -8,7 +8,7 @@ from collections import defaultdict
 
 
 RECV_SIZE = 1024
-declared_dirs = []
+declared_dirs = []  # TODO: add names to user
 files: defaultdict[str, set[str]] = defaultdict(set)
 
 
