@@ -60,7 +60,11 @@ class Directory:
         self.contents = contents
 
     @classmethod
+<<<<<<< HEAD
     def from_path(cls, path: Path | str) -> Directory:
+=======
+    def from_path(cls, path: Path | str) -> FileTree:
+>>>>>>> 3625d12 (Added missing documentation and refactoring.)
         """Create a directory from a directory path in file system."""
         path = Path(path)
         contents = []
@@ -78,10 +82,13 @@ class Directory:
             'name': self.name,
             'contents': [c.to_dict() for c in self.contents]
         }
+<<<<<<< HEAD
 
     def copy(self) -> Directory:
         """Create a copy of the directory."""
         return Directory(self.name, [x.copy() for x in self.contents])
+=======
+>>>>>>> 3625d12 (Added missing documentation and refactoring.)
 
     def to_json(self) -> str:
         """Represent directory as JSON str."""
@@ -93,6 +100,7 @@ class Directory:
 
     def __repr__(self):
         """Represent a directory as string."""
+<<<<<<< HEAD
         out = self.name
         if not self.contents:
             out += '/{}'
@@ -108,6 +116,16 @@ class Directory:
                         out += '\n    ' + repr(x).replace("\n", "\n    ")
             out += '\n}'
         return out
+=======
+        out = self.name + "{\n"
+        for x in self.contents:
+            match x:
+                case File():
+                    out += '    ' + repr(x) + "\n"
+                case Directory():
+                    out += '    ' + repr(x).replace("\n", "\n    ") + '\n'
+        return out + '\n}'
+>>>>>>> 3625d12 (Added missing documentation and refactoring.)
 
 
 def decode(encoded: str) -> File | Directory:

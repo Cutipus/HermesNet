@@ -13,7 +13,7 @@ logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 RECV_SIZE = 1024 ** 2
 TRACKER_ADDRESS = "localhost", 25000
 DECLARE_DIR = 'DECLAREDIR {}'
-COMMANDS = ["hello", "ping", "status", "quit", "declare [directory]", "all", "query [file hash]", "help"]
+COMMANDS = ["hello", "ping", "status", "quit", "declare [directory]", "all", "query [file hash]", "search [name]", "help"]
 HELPTEXT = """\
 ping                    Pings the server - prints if it's online or offline
 hello                   Prints "meow"
@@ -22,6 +22,7 @@ quit                    Exits the client
 declare [directory]     Declares a directory (recursively) to the server, sending file hashes information and file/directory names
 all                     Prints all declared directories in the server from all clients
 query [file hash]       Requests a list of all clients that declared a file which hash matches the given hash
+search [name]           Asks the server to search all declared (File | Folder)s and retrieve results
 help                    Print this
 """
 
@@ -81,6 +82,15 @@ class ServerProtocol:
         if response == 'NOUSERS':
             return []
         return json.loads(response)
+
+    async def search(self, search_term: str) -> list[Directory]:
+        """Request the server for all search results.
+
+        Returns a list of partial user-declared directories containing search results.
+        Can raise ConnectionRefusedError if server is offline
+        """
+        response = (await self.send_message(f"SEARCH {search_term}".encode()))
+        return decode(response)
 
 
 class Client:
@@ -157,6 +167,8 @@ class Client:
             print(str(await self.server_comm.retrieve_dirs()))
         elif user_input.startswith("query"):
             print(await self.server_comm.query_file(user_input.split(maxsplit=1)[1]))
+        elif user_input.startswith("search"):
+            print(await self.server_comm.search(user_input.split(maxsplit=1)[1]))
 
     async def cmd_ping(self) -> bool:
         """Ping the server, return True if online, otherwise False.

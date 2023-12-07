@@ -64,6 +64,10 @@ async def main():
 
     assert (await c.query_file('da39a3ee5e6b4b0d3255bfef95601890afd80709')) != []
 
+    assert (await c.search("file")).contents != []
+
+    assert (await c.search("blablabla")).contents == []
+
 
 if __name__ == '__main__':
     curio.run(main)

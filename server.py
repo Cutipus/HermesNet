@@ -75,6 +75,10 @@ async def process_message(clientaddr, msg: str) -> bytes:
         if users_with_file := files.get(filehash):
             return json.dumps(list(users_with_file)).encode()
         return b'NOUSERS'
+    elif msg.startswith('SEARCH'):
+        search_term = msg.split(maxsplit=1)[1]
+        search_results = [y for x in declared_dirs if (y := search_user_dir(x, search_term))]
+        return Directory('SEARCH RESULTS', search_results).to_json().encode()
 
 
 if __name__ == '__main__':
