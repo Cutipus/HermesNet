@@ -193,13 +193,13 @@ class Client:
         """
         if await self.server_comm.ping():
             logging.debug("Ping successful - server online")
-            if self.connected != True:
+            if self.connected:
                 await self.signals.put("online")
             self.connected = True
             return True
         else:
             logging.debug("Ping unsuccessful - server offline")
-            if self.connected != False:
+            if not self.connected:
                 await self.signals.put("offline")
             self.connected = False
             return False
