@@ -122,24 +122,29 @@ class Client:
             await self.cmd_ping()
             await sleep(20)
 
-    async def events_loop(self):
-        """Read client-related events."""
+    async def events_loop(self, display=False):
+        """Read client-related events. Only prints events on display."""
         while True:
             signal = await self.signals.get()
-            print('!EVENT! ', end='')
+            if display:
+                print('!EVENT! ', end='')
             match signal:
                 case "quit":
                     logging.debug("Quit msg received; Closing . . .")
-                    print("Client shutting down")
+                    if display:
+                        print("Client shutting down")
                     return
                 case "online":
                     logging.debug("Server online")
-                    print("Server online")
+                    if display:
+                        print("Server online")
                 case "offline":
                     logging.debug("Server offline")
-                    print("Server offline")
+                    if display:
+                        print("Server offline")
                 case _:
-                    print("Nothing?")
+                    if display:
+                        print("Nothing?")
 
     async def stdinput_loop(self):
         """User input REPL."""
