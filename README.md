@@ -20,6 +20,7 @@ A distributed file sharing application inspired by SoulSeek and Torrent written 
 | query [file hash]   | Requests a list of all clients that declared a file which hash matches the given hash                      |
 | help                | Prints this table                                                                                          |
 | search [name]       | Asks the server to search all declared files or folders and retrieve results                               |
+| history             | Shows previous search results                                                                              |
 
 ## Getting Started
 ### Requirements

@@ -13,7 +13,7 @@ logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 RECV_SIZE = 1024 ** 2
 TRACKER_ADDRESS = "localhost", 25000
 DECLARE_DIR = 'DECLAREDIR {}'
-COMMANDS = ["hello", "ping", "status", "quit", "declare [directory]", "all", "query [file hash]", "search [name]", "help"]
+COMMANDS = ["hello", "ping", "status", "quit", "declare [directory]", "all", "query [file hash]", "search [name]", "search", "help"]
 HELPTEXT = """\
 ping                    Pings the server - prints if it's online or offline
 hello                   Prints "meow"
@@ -23,6 +23,7 @@ declare [directory]     Declares a directory (recursively) to the server, sendin
 all                     Prints all declared directories in the server from all clients
 query [file hash]       Requests a list of all clients that declared a file which hash matches the given hash
 search [name]           Asks the server to search all declared (File | Folder)s and retrieve results
+history                 Shows previous search results
 help                    Print this
 """
 
@@ -103,7 +104,7 @@ class Client:
         self.server_comm = ServerProtocol(self.address)
         self.connected = None  # None if not pinged yet
         self.signals = UniversalQueue()
-        self.commands: dict = {}
+        self.history = []
 
     async def run(self):
         """Start the client daemons and REPL."""
@@ -169,7 +170,16 @@ class Client:
         elif user_input.startswith("query"):
             print(await self.server_comm.query_file(user_input.split(maxsplit=1)[1]))
         elif user_input.startswith("search"):
-            print(await self.server_comm.search(user_input.split(maxsplit=1)[1]))
+            print(await self.cmd_search(user_input.split(maxsplit=1)[1]))
+        elif user_input == "history":
+            for query, result in self.history:
+                print(f"{query}\n---------------------------\n{result}\n\n")
+
+    async def cmd_search(self, query: str) -> Directory:
+        """Search a term, store the result in history."""
+        result = await self.server_comm.search(query)
+        self.history.append((query, result))
+        return result
 
     async def cmd_ping(self) -> bool:
         """Ping the server, return True if online, otherwise False.
