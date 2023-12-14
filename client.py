@@ -16,6 +16,7 @@ logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 RECV_SIZE = 1024 ** 2
 TRACKER_ADDRESS = "localhost", 25000
 DECLARE_DIR = 'DECLAREDIR {}'
+DEFAULT_DOWNLOAD_DIR = Path("./_downloads/")
 COMMANDS = ["hello", "ping", "status", "quit", "declare [directory]", "all", "query [file hash]", "search [name]", "search", "help"]
 HELPTEXT = """\
 ping                    Pings the server - prints if it's online or offline
@@ -25,8 +26,9 @@ quit                    Exits the client
 declare [directory]     Declares a directory (recursively) to the server, sending file hashes information and file/directory names
 all                     Prints all declared directories in the server from all clients
 query [file hash]       Requests a list of all clients that declared a file which hash matches the given hash
-search [name]           Asks the server to search all declared (File | Folder)s and retrieve results
+search [name]           Asks the server to search for something and allows you to choose what to download
 history                 Shows previous search results
+history [index]         Chooses a history listing to download
 help                    Print this
 """
 
@@ -37,6 +39,7 @@ class ServerProtocol:
     def __init__(self, address: tuple[str, int]):
         """Initialize the server communication with the server address."""
         self.address = address
+        DEFAULT_DOWNLOAD_DIR.mkdir()
 
     async def send_message(self, message: bytes) -> str:
         """Send a message to the server and retrieves a response.
@@ -180,7 +183,7 @@ class Client:
         elif user_input.startswith("query"):
             print(await self.server_comm.query_file(user_input.split(maxsplit=1)[1]))
         elif user_input.startswith("search"):
-            print(self.cmd_select_from_search(
+            self.download(self.cmd_select_from_search(
                     await self.cmd_search(user_input.split(maxsplit=1)[1])))
         elif user_input == "history":
             for index, (query, result) in enumerate(self.history):
@@ -188,11 +191,30 @@ class Client:
         elif user_input.startswith("history"):
             selection = self.cmd_select(user_input.split(maxsplit=1)[1], self.history)
             if selection:
-                print(self.cmd_select_from_search(selection[1]))
+                self.download(self.cmd_select_from_search(selection[1]))
+
+    def download(self, item: Directory | File, dldir: Path = DEFAULT_DOWNLOAD_DIR):
+        """Download a directory or file.
+
+        Replicates the directory hierarchy in the file system.
+        """
+        # TODO: per-user download folder
+        if isinstance(item, File):
+            pass  # The actual download logic
+        elif isinstance(item, Directory):
+            dldir /= item.name
+            dldir.mkdir()
+            for x in item.contents:
+                self.download(x, dldir)
+            pass  # create dir, download children inside modified dldir
 
     def cmd_select(self, input: str, lst: list[T]) -> T | None:
         """Process the user input to select something from a list."""
         # NOTE: Returns None if input error
+        if input == "":
+            print("Closing selection")
+            return
+
         try:
             index = int(input)
         except ValueError:

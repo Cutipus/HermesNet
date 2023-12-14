@@ -51,7 +51,7 @@ def add_user_dir(clientaddr, dir: Directory):
 async def receive_message(client, addr):
     """Receive a message from a client connection, and return response."""
     msg = bytearray()
-    while data := await client.recv(RECV_SIZE):
+    while data := await client.recv(RECV_SIZE):  # BUG: Can potentially cause exception
         msg += data
     msg = msg.decode()
     response = await process_message(addr, msg)
