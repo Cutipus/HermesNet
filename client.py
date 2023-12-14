@@ -4,9 +4,12 @@ import logging
 from signal import signal, SIGINT
 from curio import run, run_in_thread, open_connection, TaskGroup, UniversalQueue, sleep
 from socket import SHUT_WR
-from directories import Directory, decode
+from directories import Directory, File, decode
 import json
 from pathlib import Path
+from typing import TypeVar
+
+T = TypeVar('T')
 
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
@@ -148,13 +151,12 @@ class Client:
 
     async def stdinput_loop(self):
         """User input REPL."""
-        async with TaskGroup() as g:
-            while True:
-                try:
-                    user_input = await run_in_thread(input)
-                    await g.spawn(self.process_stdinput, user_input)
-                except EOFError:
-                    logging.debug("End of input")
+        while True:
+            try:
+                user_input = await run_in_thread(input, '>> ')
+                await self.process_stdinput(user_input)
+            except EOFError:
+                logging.debug("End of input")
 
     async def process_stdinput(self, user_input: str):
         """Process a single line of user input, responding to user commands."""
@@ -175,10 +177,39 @@ class Client:
         elif user_input.startswith("query"):
             print(await self.server_comm.query_file(user_input.split(maxsplit=1)[1]))
         elif user_input.startswith("search"):
-            print(await self.cmd_search(user_input.split(maxsplit=1)[1]))
+            print(self.cmd_select_from_search(
+                    await self.cmd_search(user_input.split(maxsplit=1)[1])))
         elif user_input == "history":
-            for query, result in self.history:
-                print(f"{query}\n---------------------------\n{result}\n\n")
+            for index, (query, result) in enumerate(self.history):
+                print(f"--{index}-- {query}\n---------------------------\n{result}\n\n")
+        elif user_input.startswith("history"):
+            selection = self.cmd_select(user_input.split(maxsplit=1)[1], self.history)
+            if selection:
+                print(self.cmd_select_from_search(selection[1]))
+
+    def cmd_select(self, input: str, lst: list[T]) -> T | None:
+        """Process the user input to select something from a list."""
+        # NOTE: Returns None if input error
+        try:
+            index = int(input)
+        except ValueError:
+            print("NaN try again!")
+            return
+
+        try:
+            return lst[index]
+        except IndexError:
+            print("Bad index try again!")
+            return
+
+    def cmd_select_from_search(self, search_result: Directory) -> Directory | File | None:
+        """Select items to download from search result."""
+        # NOTE: This function is interactive, it will print to stdout.
+        search_items = list(search_result)
+        for index, item in enumerate(search_items):
+            print(index, item)
+
+        return self.cmd_select(input("Select index to download: "), search_items)
 
     async def cmd_search(self, query: str) -> Directory:
         """Search a term, store the result in history."""

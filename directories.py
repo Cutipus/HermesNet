@@ -91,6 +91,15 @@ class Directory:
         """Compare two directories recursively."""
         return self.name == other.name and self.contents == other.contents
 
+    def __iter__(self):
+        """Iterate the directory tree."""
+        yield self
+        for x in self.contents:
+            if isinstance(x, Directory):
+                yield from x
+            elif isinstance(x, File):
+                yield x
+
     def __repr__(self):
         """Represent a directory as string."""
         out = self.name
