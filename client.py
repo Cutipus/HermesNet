@@ -103,11 +103,11 @@ class Client:
 
     def __init__(self, address: tuple[str, int]):
         """Initialize client with server's address."""
-        self.address = address
-        self.server_comm = ServerProtocol(self.address)
-        self.connected = None  # None if not pinged yet
-        self.signals = UniversalQueue()
-        self.history = []
+        self.address: tuple[str, int] = address
+        self.server_comm: ServerProtocol = ServerProtocol(self.address)
+        self.connected: bool | None = None  # None if not pinged yet
+        self.signals: UniversalQueue = UniversalQueue()
+        self.history: list[tuple[str, Directory]] = []
 
     async def run(self):
         """Start the client daemons and REPL."""
@@ -218,10 +218,7 @@ class Client:
         return result
 
     async def cmd_ping(self) -> bool:
-        """Ping the server, return True if online, otherwise False.
-
-        Side effect: updates `self.connected`.
-        """
+        """Ping the server, return True if online, otherwise False."""
         if await self.server_comm.ping():
             logging.debug("Ping successful - server online")
             if self.connected:
