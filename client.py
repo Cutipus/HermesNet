@@ -171,7 +171,10 @@ class Client:
         elif user_input == 'quit':
             print(self.quit())
         elif user_input.startswith("declare"):
-            print(await self.server_comm.declare_directory((Directory.from_path(user_input.split(maxsplit=1)[1]))))
+            try:
+                print(await self.server_comm.declare_directory((Directory.from_path(user_input.split(maxsplit=1)[1]))))
+            except FileNotFoundError:
+                print("Couldn't find it. Try again!")
         elif user_input == "all":
             print(str(await self.server_comm.retrieve_dirs()))
         elif user_input.startswith("query"):
