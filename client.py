@@ -7,7 +7,7 @@ from socket import SHUT_WR
 from directories import Directory, File, decode
 import json
 from pathlib import Path
-from typing import TypeVar
+from typing import Sequence, TypeVar
 
 T = TypeVar('T')
 
@@ -109,7 +109,6 @@ class ServerProtocol:
                 dirs.append(x)
         return dirs
 
-
 class Client:
     """The client receiving commands from user, interacting with the server."""
 
@@ -120,7 +119,6 @@ class Client:
         self.connected: bool | None = None  # None if not pinged yet
         self.signals: UniversalQueue = UniversalQueue()
         self.history: list[tuple[str, list[Directory]]] = []
-
     async def run(self):
         """Start the client daemons and REPL."""
         print(f"Available commands: {', '.join(COMMANDS)}")
@@ -249,7 +247,7 @@ class Client:
     def cmd_select_from_search(self, search_result: list[Directory]) -> Directory | File | None:
         """Select items to download from search result."""
         # NOTE: This function is interactive, it will print to stdout.
-        search_items: list[Directory | File] = [x
+        search_items: Sequence[Directory | File] = [x
                         for xs in map(list, search_result)
                         for x in xs]
         for index, item in enumerate(search_items):
@@ -281,7 +279,7 @@ class Client:
     def quit(self) -> str:
         """Close the client."""
         logging.debug("Sending quit signal")
-        self.signals.put("quit")  # UniversalQueue can run from non-async code
+        self.signals.put("quit")  # UniversalQueue can run from non-async code # pyright: ignore
         return 'Quitting...'
 
 
