@@ -39,7 +39,8 @@ class ServerProtocol:
     def __init__(self, address: tuple[str, int]):
         """Initialize the server communication with the server address."""
         self.address = address
-        DEFAULT_DOWNLOAD_DIR.mkdir()
+        if not DEFAULT_DOWNLOAD_DIR.exists():
+            DEFAULT_DOWNLOAD_DIR.mkdir()
 
     async def send_message(self, message: bytes) -> str:
         """Send a message to the server and retrieves a response.
@@ -73,7 +74,7 @@ class ServerProtocol:
         assert isinstance(response, Directory)
         return response
 
-    async def declare_directory(self, directory: Directory | Path | str) -> list[str]:
+    async def declare_directory(self, directory: Directory | Path | str) -> str:
         """Send a directory structure to the server, declaring files available.
 
         Can raise ConnectionRefusedError if server is offline
@@ -83,7 +84,7 @@ class ServerProtocol:
             directory = Directory.from_path(directory)
         return await self.send_message(DECLARE_DIR.format(directory.to_json()).encode())
 
-    async def query_file(self, filehash: str) -> list[str]:
+    async def query_file(self, filehash: str) -> list[tuple[str, int]]:
         """Query a file by hash from the server, returns a list of clients."""
         response = (await self.send_message(f"QUERY {filehash}".encode()))
         if response == 'NOUSERS':
@@ -97,8 +98,16 @@ class ServerProtocol:
         Returns a list of partial user-declared directories containing search results.
         Can raise ConnectionRefusedError if server is offline
         """
-        response = (await self.send_message(f"SEARCH {search_term}".encode()))
-        return decode(response)
+        dirs: list[Directory] = []
+        response = decode(await self.send_message(f"SEARCH {search_term}".encode()))
+        if isinstance(response, File):
+            raise Exception("Expected directory.")
+        for x in response.contents:
+            if isinstance(x, File):
+                raise Exception("Expected directory.")
+            elif isinstance(x, Directory):
+                dirs.append(x)
+        return dirs
 
 
 class Client:
@@ -110,7 +119,7 @@ class Client:
         self.server_comm: ServerProtocol = ServerProtocol(self.address)
         self.connected: bool | None = None  # None if not pinged yet
         self.signals: UniversalQueue = UniversalQueue()
-        self.history: list[tuple[str, Directory]] = []
+        self.history: list[tuple[str, list[Directory]]] = []
 
     async def run(self):
         """Start the client daemons and REPL."""
@@ -156,7 +165,8 @@ class Client:
         """User input REPL."""
         while True:
             try:
-                user_input = await run_in_thread(input, '>> ')
+                # BUG: will throw nonsense error when using SIGINT to stop program
+                user_input = await run_in_thread(input, ">> ")
                 await self.process_stdinput(user_input)
             except EOFError:
                 logging.debug("End of input")
@@ -183,15 +193,23 @@ class Client:
         elif user_input.startswith("query"):
             print(await self.server_comm.query_file(user_input.split(maxsplit=1)[1]))
         elif user_input.startswith("search"):
-            self.download(self.cmd_select_from_search(
-                    await self.cmd_search(user_input.split(maxsplit=1)[1])))
+            search_res = await self.cmd_search(user_input.split(maxsplit=1)[1])
+            selection = self.cmd_select_from_search(search_res)
+            if not selection:
+                print("No selection, not downloading")
+                return
+            self.download(selection)
         elif user_input == "history":
             for index, (query, result) in enumerate(self.history):
                 print(f"--{index}-- {query}\n---------------------------\n{result}\n\n")
         elif user_input.startswith("history"):
-            selection = self.cmd_select(user_input.split(maxsplit=1)[1], self.history)
-            if selection:
-                self.download(self.cmd_select_from_search(selection[1]))
+            history_selection = self.cmd_select(user_input.split(maxsplit=1)[1], self.history)
+            if not history_selection:
+                return
+            selection = self.cmd_select_from_search(history_selection[1])
+            if not selection:
+                return
+            self.download(selection)
 
     def download(self, item: Directory | File, dldir: Path = DEFAULT_DOWNLOAD_DIR):
         """Download a directory or file.
@@ -203,7 +221,8 @@ class Client:
             pass  # The actual download logic
         elif isinstance(item, Directory):
             dldir /= item.name
-            dldir.mkdir()
+            if not dldir.exists():
+                dldir.mkdir()
             for x in item.contents:
                 self.download(x, dldir)
             pass  # create dir, download children inside modified dldir
@@ -227,16 +246,18 @@ class Client:
             print("Bad index try again!")
             return
 
-    def cmd_select_from_search(self, search_result: Directory) -> Directory | File | None:
+    def cmd_select_from_search(self, search_result: list[Directory]) -> Directory | File | None:
         """Select items to download from search result."""
         # NOTE: This function is interactive, it will print to stdout.
-        search_items = list(search_result)
+        search_items: list[Directory | File] = [x
+                        for xs in map(list, search_result)
+                        for x in xs]
         for index, item in enumerate(search_items):
             print(index, item)
 
         return self.cmd_select(input("Select index to download: "), search_items)
 
-    async def cmd_search(self, query: str) -> Directory:
+    async def cmd_search(self, query: str) -> list[Directory]:
         """Search a term, store the result in history."""
         result = await self.server_comm.search(query)
         self.history.append((query, result))
@@ -260,7 +281,7 @@ class Client:
     def quit(self) -> str:
         """Close the client."""
         logging.debug("Sending quit signal")
-        self.signals.put("quit")
+        self.signals.put("quit")  # UniversalQueue can run from non-async code
         return 'Quitting...'
 
 
