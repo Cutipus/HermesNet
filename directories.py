@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from hashlib import sha1
 import json
+from typing import Sequence
 
 BUFSIZE = 1024 ** 2
 
@@ -20,7 +21,7 @@ class File:
         """Create a file from a file location on system, calculating hash."""
         name = path.name
         filehash = sha1()
-        with path.open() as f:
+        with path.open("rb") as f:
             while data := f.read(BUFSIZE):
                 filehash.update(data)
         hash = filehash.hexdigest()
@@ -54,7 +55,7 @@ class File:
 class Directory:
     """Represents a recursive directory holding files and subdirectories."""
 
-    def __init__(self, name: str, contents: list[Directory | File]):
+    def __init__(self, name: str, contents: Sequence[Directory | File]):
         """Initialize a directory with a name and a list of contents."""
         self.name = name
         self.contents = contents
@@ -130,5 +131,7 @@ def decode(encoded: str) -> File | Directory:
             return File(obj['name'], obj['hash'])
         elif obj['type'] == 'directory':
             return Directory(obj['name'], [parse(c) for c in obj['contents']])
+        else:
+            raise TypeError("Only supporting File and Directory")
 
     return parse(decode)

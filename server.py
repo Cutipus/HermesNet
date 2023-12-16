@@ -1,6 +1,7 @@
 """Server stores knowledge about which client has which file."""
 from __future__ import annotations
 import logging
+from typing import Sequence
 from curio import run, tcp_server
 from directories import File, Directory, decode
 import json
@@ -8,11 +9,11 @@ from collections import defaultdict
 
 
 RECV_SIZE = 1024
-declared_dirs = []  # TODO: add names to user
+declared_dirs: Sequence[Directory] = []  # TODO: add names to user
 files: defaultdict[str, set[str]] = defaultdict(set)
 
 
-def search_user_dir(dir: Directory, term: str) -> Directory:
+def search_user_dir(dir: Directory, term: str) -> Directory | None:
     """Search a term in a user directory, returns False if no matches."""
     search_result = dir.copy()
 
@@ -27,7 +28,7 @@ def search_user_dir(dir: Directory, term: str) -> Directory:
                 return x.contents != []
 
     if not search(search_result):
-        return False
+        return None
     else:
         return search_result
 
@@ -66,6 +67,8 @@ async def process_message(clientaddr, msg: str) -> bytes:
         return b"I'm awake!"
     elif msg.startswith('DECLAREDIR'):
         dir = decode(msg.split(maxsplit=1)[1])
+        if isinstance(dir, File):
+            return b"File declaration unsupported"
         add_user_dir(clientaddr, dir)
         return f'Sure mate, {dir.name} was added'.encode()
     elif msg == 'ALL':
@@ -77,8 +80,14 @@ async def process_message(clientaddr, msg: str) -> bytes:
         return b'NOUSERS'
     elif msg.startswith('SEARCH'):
         search_term = msg.split(maxsplit=1)[1]
-        search_results = [y for x in declared_dirs if (y := search_user_dir(x, search_term))]
+        search_results: list[Directory] = []
+        for x in declared_dirs:
+            y = search_user_dir(x, search_term)
+            if y is not None:
+                search_results.append(y)
         return Directory('SEARCH RESULTS', search_results).to_json().encode()
+    else:
+        return b"UNSUPPORTED"
 
 
 if __name__ == '__main__':
