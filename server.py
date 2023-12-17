@@ -2,7 +2,7 @@
 from __future__ import annotations
 import logging
 from typing import Sequence
-from curio import run, tcp_server
+import curio, curio.io
 from directories import File, Directory, decode
 import json
 from collections import defaultdict
@@ -49,8 +49,10 @@ def add_user_dir(clientaddr, dir: Directory):
         files[filehash].add(clientaddr)
 
 
-async def receive_message(client, addr):
+async def receive_message(client: curio.io.Socket, addr: tuple[str, int]):
     """Receive a message from a client connection, and return response."""
+    print(client, type(client))
+    print(addr, type(addr))
     msg = bytearray()
     while data := await client.recv(RECV_SIZE):  # BUG: Can potentially cause exception
         msg += data
@@ -61,7 +63,7 @@ async def receive_message(client, addr):
     await client.sendall(response)
 
 
-async def process_message(clientaddr, msg: str) -> bytes:
+async def process_message(clientaddr: tuple[str, int], msg: str) -> bytes:
     """Parse a single user message, returning a response."""
     if msg == 'ping':
         return b"I'm awake!"
@@ -90,9 +92,12 @@ async def process_message(clientaddr, msg: str) -> bytes:
         return b"UNSUPPORTED"
 
 
-if __name__ == '__main__':
+def main():
     logging.info('Started. Currently supports "ping", "all" and "declare" command(s).')
     try:
-        run(tcp_server, '', 25000, receive_message)
+        curio.run(curio.tcp_server, '', 25000, receive_message)
     except KeyboardInterrupt:
         logging.info("Server shutting down...")
+
+if __name__ == '__main__':
+    main()
