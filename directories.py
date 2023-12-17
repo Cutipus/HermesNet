@@ -120,18 +120,16 @@ class Directory:
         return out
 
 
-def decode(encoded: str) -> File | Directory:
-    """Decode a json directory structure to class."""
+def decode(encoded: bytes | str) -> File | Directory:
+    """Decode a json directory structure to class.
+
+    Raise an exception if it doesn't match the pattern expected by either.
+    """
     # TODO: process `loads` using curio in background
-    # TODO: validate the json
-    decode = json.loads(encoded)
-
-    def parse(obj: dict) -> File | Directory:
-        if obj['type'] == 'file':
-            return File(obj['name'], obj['hash'])
-        elif obj['type'] == 'directory':
-            return Directory(obj['name'], [parse(c) for c in obj['contents']])
-        else:
-            raise TypeError("Only supporting File and Directory")
-
-    return parse(decode)
+    match json.loads(encoded):
+        case {'type': 'file', 'name': name, 'hash': hash}:
+            return File(name, hash)
+        case {'type': 'directory', 'name': name, 'contents': [*contents]}:
+            return Directory(name, [parse(element) for element in contents])
+        case _:
+            raise ValueError("Bad JSON")
