@@ -27,7 +27,7 @@ A distributed file sharing application inspired by SoulSeek and Torrent written 
 
 ## Getting Started
 ### Requirements
-- Python 3.11+
+- Python 3.12+
 - Curio
 
 ### Installation
