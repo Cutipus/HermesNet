@@ -2,23 +2,22 @@
 from __future__ import annotations
 import logging
 from signal import signal, SIGINT
+from typing import Sequence
 from curio import run, run_in_thread, open_connection, TaskGroup, UniversalQueue, sleep
+import curio.io
 from socket import SHUT_WR
 from directories import Directory, File, decode
 import json
 from pathlib import Path
-from typing import Sequence, TypeVar
-
-T = TypeVar('T')
 
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
-RECV_SIZE = 1024 ** 2
-TRACKER_ADDRESS = "localhost", 25000
-DECLARE_DIR = 'DECLAREDIR {}'
-DEFAULT_DOWNLOAD_DIR = Path("./_downloads/")
-COMMANDS = ["hello", "ping", "status", "quit", "declare [directory]", "all", "query [file hash]", "search [name]", "search", "help"]
-HELPTEXT = """\
+RECV_SIZE: int = 1024 ** 2
+TRACKER_ADDRESS: tuple[str, int] = "localhost", 25000
+DECLARE_DIR: str = 'DECLAREDIR {}'
+DEFAULT_DOWNLOAD_DIR: Path = Path("./_downloads/")
+COMMANDS: list[str] = ["hello", "ping", "status", "quit", "declare [directory]", "all", "query [file hash]", "search [name]", "search", "help"]
+HELPTEXT: str = """\
 ping                    Pings the server - prints if it's online or offline
 hello                   Prints "meow"
 status                  Prints the server's online status without pinging
@@ -110,7 +109,8 @@ class ServerProtocol:
         return dirs
 
 class Client:
-    """The client receiving commands from user, interacting with the server."""
+    """The client receiving commands from CLI, interacting with the server."""
+    # TODO: rename to CliClient, move history functionality to new Client class.
 
     def __init__(self, address: tuple[str, int]):
         """Initialize client with server's address."""
@@ -119,10 +119,13 @@ class Client:
         self.connected: bool | None = None  # None if not pinged yet
         self.signals: UniversalQueue = UniversalQueue()
         self.history: list[tuple[str, list[Directory]]] = []
+
     async def run(self):
         """Start the client daemons and REPL."""
         print(f"Available commands: {', '.join(COMMANDS)}")
+
         signal(SIGINT, lambda signo, frame: self.quit())
+
         async with TaskGroup(wait=any) as g:
             await g.spawn(self.stdinput_loop)
             await g.spawn(self.events_loop)
@@ -225,7 +228,7 @@ class Client:
                 self.download(x, dldir)
             pass  # create dir, download children inside modified dldir
 
-    def cmd_select(self, input: str, lst: list[T]) -> T | None:
+    def cmd_select[T](self, input: str, lst: list[T]) -> T | None:
         """Process the user input to select something from a list."""
         # NOTE: Returns None if input error
         if input == "":

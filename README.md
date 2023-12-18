@@ -7,6 +7,8 @@ A distributed file sharing application inspired by SoulSeek and Torrent written 
 ## Features
 - Supports a CLI interactive interface for testing
 - Automatically pings server and notifies when the server goes online and offline
+- Search for files declared by other users
+- Cache previous search results
 
 ## Currently Available Commands
 | command             | description                                                                                                |
@@ -19,8 +21,9 @@ A distributed file sharing application inspired by SoulSeek and Torrent written 
 | all                 | Prints all declared directories in the server from all clients                                             |
 | query [file hash]   | Requests a list of all clients that declared a file which hash matches the given hash                      |
 | help                | Prints this table                                                                                          |
-| search [name]       | Asks the server to search all declared files or folders and retrieve results                               |
+| search [name]       | Asks the server to search all declared files or folders and choose download                                |
 | history             | Shows previous search results                                                                              |
+| history [n]         | Select the nth previous search result and prompts to download like search                                  |
 
 ## Getting Started
 ### Requirements

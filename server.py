@@ -53,11 +53,10 @@ async def receive_message(client: curio.io.Socket, addr: tuple[str, int]):
     """Receive a message from a client connection, and return response."""
     print(client, type(client))
     print(addr, type(addr))
-    msg = bytearray()
+    msg: bytearray = bytearray()
     while data := await client.recv(RECV_SIZE):  # BUG: Can potentially cause exception
         msg += data
-    msg = msg.decode()
-    response = await process_message(addr, msg)
+    response = await process_message(addr, msg.decode())
     logging.info(f"Received message from {addr}: {msg}")
     logging.info(f"Sending response: {response}")
     await client.sendall(response)
