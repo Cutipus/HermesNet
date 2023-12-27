@@ -9,6 +9,7 @@ from socket import SHUT_WR
 from directories import Directory, File, decode
 import json
 from pathlib import Path
+import shlex
 
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
@@ -172,45 +173,52 @@ class Client:
             except EOFError:
                 logging.debug("End of input")
 
-    async def process_stdinput(self, user_input: str):
-        """Process a single line of user input, responding to user commands."""
-        if user_input == 'hello':
-            print('meow')
-        elif user_input == 'help':
-            print(HELPTEXT)
-        elif user_input == 'status':
-            print(f'Server {"connected" if self.connected else "disconnected"}.')
-        elif user_input == 'ping':
-            print(await self.cmd_ping())
-        elif user_input == 'quit':
-            print(self.quit())
-        elif user_input.startswith("declare"):
-            try:
-                print(await self.server_comm.declare_directory((Directory.from_path(user_input.split(maxsplit=1)[1]))))
-            except FileNotFoundError:
-                print("Couldn't find it. Try again!")
-        elif user_input == "all":
-            print(str(await self.server_comm.retrieve_dirs()))
-        elif user_input.startswith("query"):
-            print(await self.server_comm.query_file(user_input.split(maxsplit=1)[1]))
-        elif user_input.startswith("search"):
-            search_res = await self.cmd_search(user_input.split(maxsplit=1)[1])
-            selection = self.cmd_select_from_search(search_res)
-            if not selection:
-                print("No selection, not downloading")
-                return
-            self.download(selection)
-        elif user_input == "history":
-            for index, (query, result) in enumerate(self.history):
-                print(f"--{index}-- {query}\n---------------------------\n{result}\n\n")
-        elif user_input.startswith("history"):
-            history_selection = self.cmd_select(user_input.split(maxsplit=1)[1], self.history)
-            if not history_selection:
-                return
-            selection = self.cmd_select_from_search(history_selection[1])
-            if not selection:
-                return
-            self.download(selection)
+    async def process_stdinput(self, command: str):
+        """Process a single command from the user.
+
+        Each command is a single line from stdin.
+        """
+        match shlex.split(command):
+            case ["hello"]:
+                print('meow')
+            case ["help"]:
+                print(HELPTEXT)
+            case ["status"]:
+                print(f'Server {"connected" if self.connected else "disconnected"}.')
+            case ["ping"]:
+                print(await self.cmd_ping())
+            case ["quit"]:
+                print(self.quit())
+            case ["declare", filename]:
+                try:
+                    print(await self.server_comm.declare_directory((Directory.from_path(filename))))
+                except FileNotFoundError:
+                    print("Couldn't find it. Try again!")
+            case ["all"]:
+                print(str(await self.server_comm.retrieve_dirs()))
+            case ["query", hash]:
+                print(await self.server_comm.query_file(hash))
+            case ["search", search_term]:
+                search_res = await self.cmd_search(search_term)
+                selection = self.cmd_select_from_search(search_res)
+                if not selection:
+                    print("No selection, not downloading")
+                    return
+                self.download(selection)
+            case ["history"]:
+                for index, (query, result) in enumerate(self.history):
+                    print(f"--{index}-- {query}\n---------------------------\n{result}\n\n")
+            case ["history", num]:
+                history_selection = self.cmd_select(num, self.history)
+                if not history_selection:
+                    return
+                selection = self.cmd_select_from_search(history_selection[1])
+                if not selection:
+                    return
+                self.download(selection)
+            case _:
+                print("Unknown command: ", command)
+
 
     def download(self, item: Directory | File, dldir: Path = DEFAULT_DOWNLOAD_DIR):
         """Download a directory or file.
