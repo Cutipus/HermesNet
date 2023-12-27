@@ -34,7 +34,11 @@ help                    Print this
 
 
 class ServerProtocol:
-    """The protocol to communicate with the server."""
+    """The protocol to communicate with the server.
+
+    TODO: username
+    TODO: answer pings from server
+    """
 
     def __init__(self, address: tuple[str, int]):
         """Initialize the server communication with the server address."""
