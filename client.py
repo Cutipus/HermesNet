@@ -113,6 +113,52 @@ class ServerProtocol:
                 dirs.append(x)
         return dirs
 
+
+class ClientProtocol:
+    """The protocol to communicate between clients."""
+
+    def __init__(self):
+        self.files_by_hash: dict[str, Path] = dict()
+
+    def run(self):
+        pass
+
+    async def receive_message(self, client: curio.io.Socket, addr: tuple[str, int]):
+        """Handle a single client request."""
+        msg: bytearray = bytearray()
+        while data := await client.recv(RECV_SIZE):  # BUG: Can potentially cause exception
+            msg += data
+
+        match msg.decode().split():
+            case ['download', filehash, _start, _end]:
+                start: int = int(_start)
+                end: int = int(_end)
+                filepath: Path = self.files_by_hash[filehash]
+                logging.info(f"Received download request from {addr}: ({filepath}{filehash}):{start}-{end}")
+                with open(filepath, 'rb') as file:
+                    file.seek(start)
+                    while start + RECV_SIZE < end:
+                        await client.send(file.read(RECV_SIZE))
+                        start += RECV_SIZE
+                    await client.send(file.read(end - start))
+            case _:
+                raise ValueError("Unrecognized client request")
+                # TODO: send back an error message to client
+
+    async def send_message(self, addr: tuple[str, int], message: bytes) -> bytes:
+        """Send a message to the addr, returning the whole response."""
+        logging.debug("Sending message")
+        conn = await open_connection(*addr)
+        await conn.sendall(message)
+        await conn.shutdown(SHUT_WR)  # end message signal
+
+        logging.debug("Receiving response")
+        msg: bytearray = bytearray()
+        while data := await conn.recv(RECV_SIZE):
+            msg += data
+        return msg
+
+
 class Client:
     """The client receiving commands from CLI, interacting with the server."""
     # TODO: rename to CliClient, move history functionality to new Client class.
