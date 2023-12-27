@@ -46,6 +46,10 @@ class ServerProtocol:
         if not DEFAULT_DOWNLOAD_DIR.exists():
             DEFAULT_DOWNLOAD_DIR.mkdir()
 
+    async def run(self):
+        """Run the daemon to communicate with the server."""
+        ...
+
     async def send_message(self, message: bytes) -> str:
         """Send a message to the server and retrieves a response.
 
