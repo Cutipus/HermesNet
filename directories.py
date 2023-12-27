@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from hashlib import sha1
 import json
-from typing import Sequence
+from typing import Any, Sequence
 
 BUFSIZE = 1024 ** 2
 
@@ -11,28 +11,31 @@ BUFSIZE = 1024 ** 2
 class File:
     """Represents a file in a directory hierarchy."""
 
-    def __init__(self, name: str, hash: str):
+    def __init__(self, name: str, hash: str, filesize: int):
         """Create file parameterized by name and its hash."""
         self.name = name
         self.hash = hash
+        self.size = filesize
 
     @classmethod
     def from_path(cls, path: Path) -> File:
         """Create a file from a file location on system, calculating hash."""
         name = path.name
+        filesize = path.stat().st_size
         filehash = sha1()
         with path.open("rb") as f:
             while data := f.read(BUFSIZE):
                 filehash.update(data)
         hash = filehash.hexdigest()
-        return cls(name, hash)
+        return cls(name, hash, filesize)
 
     def to_dict(self) -> dict:
         """Represent the file as a dict for JSON processing."""
         return {
             'type': 'file',
             'name': self.name,
-            'hash': self.hash
+            'hash': self.hash,
+            'size': self.size,
         }
 
     def to_json(self) -> str:
@@ -41,7 +44,7 @@ class File:
 
     def copy(self) -> File:
         """Create a copy of the file."""
-        return File(self.name, self.hash)
+        return File(self.name, self.hash, self.size)
 
     def __eq__(self, other: File) -> bool:
         """Allow comparing files."""
@@ -49,7 +52,7 @@ class File:
 
     def __repr__(self):
         """Represent a file as string."""
-        return f'{self.name}[{self.hash}]'
+        return f'{self.name}[{self.hash}][{self.size}]'
 
 
 class Directory:
@@ -120,16 +123,20 @@ class Directory:
         return out
 
 
+type lst = list[dict[str, Any]]
 def decode(encoded: bytes | str) -> File | Directory:
     """Decode a json directory structure to class.
 
     Raise an exception if it doesn't match the pattern expected by either.
     """
     # TODO: process `loads` using curio in background
-    match json.loads(encoded):
-        case {'type': 'file', 'name': name, 'hash': hash}:
-            return File(name, hash)
-        case {'type': 'directory', 'name': name, 'contents': [*contents]}:
-            return Directory(name, [parse(element) for element in contents])
-        case _:
-            raise ValueError("Bad JSON")
+    loaded: dict = json.loads(encoded)
+    def parse(json_decode: dict) -> File | Directory:
+        match json_decode:
+            case {'type': 'file', 'name': str(name), 'hash': str(hash), 'size': int(size)}:
+                return File(name, hash, size)
+            case {'type': 'directory', 'name': str(name), 'contents': list(contents)}:  #
+                return Directory(name, [parse(element) for element in contents])
+            case _:
+                raise ValueError("Bad JSON")
+    return parse(loaded)
