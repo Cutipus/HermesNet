@@ -123,7 +123,6 @@ class Directory:
         return out
 
 
-type lst = list[dict[str, Any]]
 def decode(encoded: bytes | str) -> File | Directory:
     """Decode a json directory structure to class.
 
