@@ -131,12 +131,15 @@ def decode(encoded: bytes | str) -> File | Directory:
     """
     # TODO: process `loads` using curio in background
     loaded: dict = json.loads(encoded)
-    def parse(json_decode: dict) -> File | Directory:
-        match json_decode:
-            case {'type': 'file', 'name': str(name), 'hash': str(hash), 'size': int(size)}:
-                return File(name, hash, size)
-            case {'type': 'directory', 'name': str(name), 'contents': list(contents)}:  #
-                return Directory(name, [parse(element) for element in contents])
-            case _:
-                raise ValueError("Bad JSON")
     return parse(loaded)
+
+
+def parse(json_decode: dict) -> File | Directory:
+    """Parse dict back to File | Directory."""
+    match json_decode:
+        case {'type': 'file', 'name': str(name), 'hash': str(hash), 'size': int(size)}:
+            return File(name, hash, size)
+        case {'type': 'directory', 'name': str(name), 'contents': list(contents)}:  #
+            return Directory(name, [parse(element) for element in contents])
+        case _:
+            raise ValueError("Bad JSON")
