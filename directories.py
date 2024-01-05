@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from hashlib import sha1
 import json
-from typing import Any, Sequence
+from typing import Generator, Optional, Sequence
 
 BUFSIZE = 1024 ** 2
 
@@ -50,6 +50,9 @@ class File:
         """Allow comparing files."""
         return self.name == other.name and self.hash == other.hash
 
+    def __and__(self, term: str) -> Optional[File]:
+        return self if term in self.name else None
+
     def __repr__(self):
         """Represent a file as string."""
         return f'{self.name}[{self.hash}][{self.size}]'
@@ -95,7 +98,15 @@ class Directory:
         """Compare two directories recursively."""
         return self.name == other.name and self.contents == other.contents
 
-    def __iter__(self):
+    def __and__(self, term: str) -> Optional[Directory]:
+        """Search a directory, return a clone of that directory with the non-matching files removed."""
+        search_result = self.copy()
+        search_result.contents = [searched for y in search_result.contents if (searched := y & term)]
+        if search_result.contents == []:
+            return None
+        return search_result
+
+    def __iter__(self) -> Generator[Directory | File, None, None]:
         """Iterate the directory tree."""
         yield self
         for x in self.contents:

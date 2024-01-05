@@ -3,6 +3,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from json import dumps, loads
+from json.decoder import JSONDecodeError
 from typing import ClassVar, NamedTuple, Self, Protocol
 from directories import Directory, decode, parse
 
@@ -21,10 +22,13 @@ class Socket(Protocol):
 
 async def read_message(socket: Socket) -> ServerMessage:
     """Send a message to the server."""
-    # TODO: custom ServerMessage in case of error
-    message_length = int.from_bytes(await socket.recv(FRAME_SIZE))
+    if not (frame := await socket.recv(FRAME_SIZE)):
+        raise ConnectionAbortedError
+    message_length = int.from_bytes(frame)
     msg = bytearray()
-    while len(msg) < message_length and (chunk := await socket.recv(CHUNK_SIZE)):
+    while len(msg) < message_length:
+        if not (chunk := await socket.recv(CHUNK_SIZE)):
+            raise ConnectionAbortedError
         msg += chunk
 
     return ServerMessage.from_bytes(msg)
@@ -41,6 +45,9 @@ class User(NamedTuple):
     username: str
     ip_address: str
 
+    def to_dict(self):
+        return {'username': self.username, 'ip_address': self.ip_address}
+
 
 @dataclass(kw_only=True)
 class ServerMessage():
@@ -53,8 +60,9 @@ class ServerMessage():
         """Decode a message prefixed by a byte denoting its type."""
         bytecode: int = int.from_bytes(bts[:COMMAND_SIZE])
         if bytecode not in cls._registered_message_types:
-            raise TypeError(f"{bytecode} is an unsupported command code.")
-        if rest_of_data := bts[COMMAND_SIZE]:
+            raise ValueError(f"{bytecode} is an unsupported command code.")
+
+        if rest_of_data := bts[COMMAND_SIZE:]:
             return cls._registered_message_types[bytecode].from_bytes(rest_of_data)
         else:
             return cls._registered_message_types[bytecode]()
@@ -69,6 +77,7 @@ class ServerMessage():
     def __bytes__(self) -> bytes:
         return self.command.to_bytes(1)
 
+
 @dataclass(kw_only=True)
 class Login(ServerMessage):
     """Initial login message to be sent at every connection start."""
@@ -81,9 +90,13 @@ class Login(ServerMessage):
 
     @classmethod
     def from_bytes(cls, data: bytes) -> Self:
-        """"""
         username, password = data.decode().split(':')
         return cls(username=username, password=password)
+
+
+@dataclass(kw_only=True)
+class WrongPassword(ServerMessage):
+    command: int = 19
 
 
 @dataclass(kw_only=True)
@@ -152,7 +165,7 @@ class Declare(ServerMessage):
     def from_bytes(cls, data: bytes) -> Self:
         directory = decode(data)
         if not isinstance(directory, Directory):
-            raise TypeError("Not a directory!")
+            raise ValueError("Not a directory!")
         return cls(directory=directory)
 
 
@@ -174,19 +187,35 @@ class Search(ServerMessage):
 class SearchResults(ServerMessage):
     """Results of search operation."""
     command: int = 41
-    results: list[tuple[User, Directory]]
+    results: dict[User, list[Directory]]
 
     def __bytes__(self) -> bytes:
         return super().__bytes__() + dumps(self.results, default=lambda x: x.to_dict()).encode()
 
     @classmethod
     def from_bytes(cls, data: bytes) -> Self:
-        results: list[tuple[User, Directory]]= []
-        for (username, ip_addr), directory_dict in loads(data):
-            directory = parse(directory_dict)
-            if not isinstance(directory, Directory):
-                raise TypeError(f"{directory} is not a Directory")
-            results.append((User(username, ip_addr), directory))
+        # can raise ValueError
+        results: dict[User, list[Directory]] = dict()
+
+        try:
+            parsed: dict[tuple[str, str], list[dict]] = loads(data)
+        except JSONDecodeError:
+            raise ValueError(f"Can't parse {data}")
+
+        # TODO: make sure all values are correct type!
+        try:
+            for (username, ip_addr), directory_dicts in parsed.items():
+                user = User(username, ip_addr)
+                dirs: list[Directory] = []
+                for dir_dict in directory_dicts:
+                    dir = parse(dir_dict)
+                    if not isinstance(dir, Directory):
+                        raise ValueError(f"{dir} is not a Directory")
+                    dirs.append(dir)
+                results[user] = dirs
+        except TypeError:
+            raise ValueError(f"Can't parse {data}")
+
         return cls(results=results)
 
 
@@ -221,4 +250,11 @@ class QuerySearchResults(ServerMessage):
 
     @classmethod
     def from_bytes(cls, data: bytes) -> Self:
-        return cls(results=[User(name, addr) for name, addr in loads(data)])
+        # can raise json.decoder.JSONDecoderError
+        try:
+            parsed: list[tuple[str, str]] = loads(data) # NOTE: no type for list of size 2
+        except JSONDecodeError:
+            raise ValueError(f"Can't parse {data}")
+
+        # TODO: ensure parsed adheres to the type
+        return cls(results=[User(name, addr) for name, addr in parsed])

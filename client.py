@@ -1,15 +1,15 @@
 """Receives commands from user and talks to server.#!/usr/bin/env python."""
+
 from __future__ import annotations
 import logging
 from signal import signal, SIGINT
-from typing import Sequence
-from curio import run, run_in_thread, open_connection, TaskGroup, UniversalQueue, sleep
+from typing import Optional
+from curio import run, run_in_thread, open_connection, UniversalQueue, sleep
 import curio.io
-from socket import SHUT_WR
-from directories import Directory, File, decode
-import json
+from directories import Directory, File
 from pathlib import Path
 import shlex
+from server_protocol import *
 
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
@@ -29,8 +29,12 @@ query [file hash]       Requests a list of all clients that declared a file whic
 search [name]           Asks the server to search for something and allows you to choose what to download
 history                 Shows previous search results
 history [index]         Chooses a history listing to download
-help                    Print this
-"""
+help                    Print this"""
+
+
+class LoginDetails(NamedTuple):
+    username: str
+    password: str
 
 
 class ServerProtocol:
@@ -40,94 +44,142 @@ class ServerProtocol:
     TODO: answer pings from server
     """
 
-    def __init__(self, address: tuple[str, int]):
-        """Initialize the server communication with the server address."""
-        self.address = address
+    def __init__(self, server_address: tuple[str, int], login: LoginDetails, retry_timer: int = 1) -> None:
+        """Initialize the server communication with the server address.
+
+        server_address: The server's IP address and port
+        login: The username and password to identify with
+        sock: the socket to the server - None if it's not initialized yet
+        """
+        self.server_address = server_address
+        self.sock: Optional[curio.io.Socket] = None
+        self.login_details: LoginDetails = login
+        self.retry_timer = retry_timer
+
         if not DEFAULT_DOWNLOAD_DIR.exists():
             DEFAULT_DOWNLOAD_DIR.mkdir()
 
-    async def run(self):
+    async def run(self) -> None:
         """Run the daemon to communicate with the server."""
-        ...
+        await self.connect()
+        await self.login()
 
-    async def send_message(self, message: bytes) -> str:
-        """Send a message to the server and retrieves a response.
+    async def connect(self) -> None:
+        """Connect to server and send login."""
+        while True:
+            try:
+                self.sock = await open_connection(*self.server_address)
+                break
+            except ConnectionError:
+                print("Connection to server failed! Retrying...")
+                await sleep(self.retry_timer)
 
-        May raise ConnectionRefusedError.
-        """
-        logging.debug("Sending message")
-        conn = await open_connection(*self.address)
-        await conn.sendall(message)
-        await conn.shutdown(SHUT_WR)  # end message signal
-        msg = bytearray()
-        while data := await conn.recv(RECV_SIZE):
-            msg += data
-        return msg.decode()
+    async def send_message_get_response(self, message: ServerMessage) -> ServerMessage:
+        """Send a message to the server, and return a response."""
+        assert self.sock is not None # this command should only be run *after* run()
+
+        while True:
+            try:
+                await send_message(self.sock, message)
+                return await read_message(self.sock)
+            except ConnectionError as e:
+                print("Connection to server failed! Retrying...")
+                await self.run()
+                await sleep(self.retry_timer)
+            except ValueError as e:
+                return Error(error_text=str(e))
 
     async def ping(self) -> bool:
         """Pings the server, returning True if server is online else False."""
         try:
-            await self.send_message(b'ping')
-            return True
-        except ConnectionRefusedError:
+            response = await self.send_message_get_response(Ping())
+        except ConnectionError:
             return False
 
-    async def retrieve_dirs(self) -> Directory:
+        match response:
+            case Pong() | Ok():
+                return True
+            case _:
+                return False
+
+    async def login(self):
+        """Send login details - typically immediately after connecting."""
+        match await self.send_message_get_response(Login(**self.login_details._asdict())):
+            case Ok():
+                print(f"Logged in as {self.login_details.username}!")
+            case WrongPassword():
+                raise PermissionError("Wrong password!")
+            case Error(error_text=error):
+                raise ValueError(error)
+            case other:
+                raise ValueError(f"Unknown response: {other}")
+
+    async def retrieve_dirs(self) -> SearchResults:
         """Request a list of all the declared directories from the server.
 
-        Returns an "ALL" directory with all the directories as subdirs.
-        Can raise ConnectionRefusedError if server is offline
+        Returns a list of (User, Directory) pairs of all the declared files.
+        Can raise ConnectionError or ValueError.
         """
-        response = decode(await self.send_message(b'ALL'))
-        assert isinstance(response, Directory)
-        return response
+        match await self.send_message_get_response(All()):
+            case SearchResults() as results:
+                return results
+            case Error(error_text=text):
+                raise ValueError(text)
+            case other:
+                raise ValueError(f"Unsupported response: {other}")
 
-    async def declare_directory(self, directory: Directory | Path | str) -> str:
+    async def declare_directory(self, directory: Directory | Path | str) -> Ok:
         """Send a directory structure to the server, declaring files available.
 
-        Can raise ConnectionRefusedError if server is offline
+        Can raise ConnectionError if server is offline
         Can raise FileNotFoundError if can't find the directory
+        Can raise ValueError if poor response
         """
         if not isinstance(directory, Directory):
             directory = Directory.from_path(directory)
-        return await self.send_message(DECLARE_DIR.format(directory.to_json()).encode())
 
-    async def query_file(self, filehash: str) -> list[tuple[str, int]]:
-        """Query a file by hash from the server, returns a list of clients."""
-        response = (await self.send_message(f"QUERY {filehash}".encode()))
-        if response == 'NOUSERS':
-            return []
-        # BUG: May raise JSON parsing error
-        return json.loads(response)
+        match await self.send_message_get_response(Declare(directory=directory)):
+            case Ok() as ok:
+                return ok
+            case other:
+                raise ValueError(f"Unrecognized response {other}")
 
-    async def search(self, search_term: str) -> list[Directory]:
+    async def query_file(self, filehash: str) -> QuerySearchResults:
+        """Query a file by hash from the server, returns a list of clients.
+
+        Can raise ConnectionError and ValueError.
+        """
+        match await self.send_message_get_response(Query(file_hash=filehash)):
+            case QuerySearchResults() as response:
+                return response
+            case other:
+                raise ValueError(f"Unrecognized response {other}")
+
+    async def search(self, search_term: str) -> SearchResults:
         """Request the server for all search results.
 
         Returns a list of partial user-declared directories containing search results.
-        Can raise ConnectionRefusedError if server is offline
+        Can raise ConnectionError if server is offline
+        Can raise ValueError
         """
-        dirs: list[Directory] = []
-        response = decode(await self.send_message(f"SEARCH {search_term}".encode()))
-        if isinstance(response, File):
-            raise Exception("Expected directory.")
-        for x in response.contents:
-            if isinstance(x, File):
-                raise Exception("Expected directory.")
-            elif isinstance(x, Directory):
-                dirs.append(x)
-        return dirs
+        match await self.send_message_get_response(Search(search_term=search_term)):
+            case SearchResults() as results:
+                return results
+            case other:
+                raise ValueError(f"Unrecognized response {other}")
+
 
 class Client:
     """The client receiving commands from CLI, interacting with the server."""
     # TODO: rename to CliClient, move history functionality to new Client class.
 
-    def __init__(self, address: tuple[str, int]):
+    def __init__(self, address: tuple[str, int], login: LoginDetails):
         """Initialize client with server's address."""
         self.address: tuple[str, int] = address
-        self.server_comm: ServerProtocol = ServerProtocol(self.address)
+        self.server_comm: ServerProtocol = ServerProtocol(self.address, login)
         self.connected: bool | None = None  # None if not pinged yet
         self.signals: UniversalQueue = UniversalQueue()
-        self.history: list[tuple[str, list[Directory]]] = []
+        self.history: list[tuple[str, SearchResults]] = []
 
     async def run(self):
         """Start the client daemons and REPL."""
@@ -135,11 +187,8 @@ class Client:
 
         signal(SIGINT, lambda signo, frame: self.quit())
 
-        async with TaskGroup(wait=any) as g:
-            await g.spawn(self.stdinput_loop)
-            await g.spawn(self.events_loop)
-            await g.spawn(self.auto_pinger)
-            print("Connecting... Please wait")
+        await self.server_comm.run()
+        await self.stdinput_loop()
 
     async def auto_pinger(self):
         """Indefinitely ping the server, updating connection status."""
@@ -147,46 +196,49 @@ class Client:
             await self.cmd_ping()
             await sleep(20)
 
-    async def events_loop(self, display=False):
-        """Read client-related events. Only prints events on display."""
+    async def events_loop(self):
+        """Read client-related events."""
         while True:
             signal = await self.signals.get()
-            if display:
-                print('!EVENT! ', end='')
+            print('!EVENT! ', end='')
             match signal:
                 case "quit":
-                    logging.debug("Quit msg received; Closing . . .")
-                    if display:
-                        print("Client shutting down")
+                    print("Client shutting down")
                     return
                 case "online":
-                    logging.debug("Server online")
-                    if display:
-                        print("Server online")
+                    print("Server online")
                 case "offline":
-                    logging.debug("Server offline")
-                    if display:
-                        print("Server offline")
+                    print("Server offline")
                 case _:
-                    if display:
-                        print("Nothing?")
+                    print("Nothing?")
 
     async def stdinput_loop(self):
         """User input REPL."""
         while True:
             try:
-                # BUG: will throw nonsense error when using SIGINT to stop program
                 user_input = await run_in_thread(input, ">> ")
-                await self.process_stdinput(user_input)
             except EOFError:
-                logging.debug("End of input")
+                print("Closing!")
+                break
+
+            try:
+                await self.process_stdinput(user_input)
+            except ValueError as e:
+                print(e)
+                continue
 
     async def process_stdinput(self, command: str):
         """Process a single command from the user.
 
         Each command is a single line from stdin.
         """
-        match shlex.split(command):
+        try:
+            user_input = shlex.split(command)
+        except ValueError:
+            print("???")
+            return
+
+        match user_input:
             case ["hello"]:
                 print('meow')
             case ["help"]:
@@ -208,22 +260,21 @@ class Client:
                 print(await self.server_comm.query_file(hash))
             case ["search", search_term]:
                 search_res = await self.cmd_search(search_term)
-                selection = self.cmd_select_from_search(search_res)
-                if not selection:
-                    print("No selection, not downloading")
+                try:
+                    selection = self.cmd_select_search_result(search_res)
+                except ValueError as e:
+                    print(e)
                     return
                 self.download(selection)
             case ["history"]:
                 for index, (query, result) in enumerate(self.history):
                     print(f"--{index}-- {query}\n---------------------------\n{result}\n\n")
             case ["history", num]:
-                history_selection = self.cmd_select(num, self.history)
-                if not history_selection:
-                    return
-                selection = self.cmd_select_from_search(history_selection[1])
-                if not selection:
-                    return
+                history_selection = self.cmd_select(self.history, num)
+                selection = self.cmd_select_search_result(history_selection[1])
                 self.download(selection)
+            case []:
+                return
             case _:
                 print("Unknown command: ", command)
 
@@ -244,37 +295,34 @@ class Client:
                 self.download(x, dldir)
             pass  # create dir, download children inside modified dldir
 
-    def cmd_select[T](self, input: str, lst: list[T]) -> T | None:
-        """Process the user input to select something from a list."""
-        # NOTE: Returns None if input error
-        if input == "":
-            print("Closing selection")
-            return
+    def cmd_select[T](self, lst: list[T], selection: Optional[str]=None) -> T:
+        """Process the user input to select something from a list.
 
+        Can raise ValueError if bad user input."""
         try:
-            index = int(input)
+            return lst[int(input("Select element: ")) if selection is None else int(selection)]
         except ValueError:
-            print("NaN try again!")
-            return
-
-        try:
-            return lst[index]
+            raise ValueError("NaN try again!")
         except IndexError:
-            print("Bad index try again!")
-            return
+            raise ValueError("Bad index try again!")
 
-    def cmd_select_from_search(self, search_result: list[Directory]) -> Directory | File | None:
-        """Select items to download from search result."""
-        # NOTE: This function is interactive, it will print to stdout.
-        search_items: Sequence[Directory | File] = [x
-                        for xs in map(list, search_result)
-                        for x in xs]
-        for index, item in enumerate(search_items):
-            print(index, item)
+    def cmd_select_search_result(self, search_result: SearchResults) -> Directory | File:
+        """Select items to download from search result.
 
-        return self.cmd_select(input("Select index to download: "), search_items)
+        Can raise ValueError if bad user selection
+        """
+        index = 0
+        items: list[Directory] = []
+        for user, dirs in search_result.results.items():
+            for dir in dirs:
+                items.append(dir)
+                print(index, user, dir)
+                index += 1
 
-    async def cmd_search(self, query: str) -> list[Directory]:
+        selected_dir = self.cmd_select(items)
+        return self.cmd_select(list(selected_dir))
+
+    async def cmd_search(self, query: str) -> SearchResults:
         """Search a term, store the result in history."""
         result = await self.server_comm.search(query)
         self.history.append((query, result))
@@ -304,7 +352,7 @@ class Client:
 
 async def main():
     """Start the client."""
-    client = Client(TRACKER_ADDRESS)
+    client = Client(TRACKER_ADDRESS, LoginDetails('abc', 'def'))
     await client.run()
 
 

@@ -1,102 +1,120 @@
 """Server stores knowledge about which client has which file."""
 from __future__ import annotations
-import logging
-from typing import Sequence
 import curio, curio.io
-from directories import File, Directory, decode
-import json
-from collections import defaultdict
+from directories import File, Directory
+from server_protocol import *
 
 
-RECV_SIZE = 1024
-declared_dirs: Sequence[Directory] = []  # TODO: add names to user
-files: defaultdict[str, set[str]] = defaultdict(set)
+class Server:
+    def __init__(self):
+        """Create a new server.
 
+        declared_dirs: All directories declared by a user.
+        users_by_hash: Used to find which users have a file with some hash.
+        users: Maps username to IP and password
+        """
+        self.declared_dirs: dict[User, list[Directory]] = dict()
+        self.users_by_hash: dict[str, list[User]] = dict()
+        self.hashes_by_user: dict[User, list[str]] = dict()
+        self.users_by_username: dict[str, tuple[User, str]] = dict()
+        self.bind_address = '', 25000
 
-def search_user_dir(dir: Directory, term: str) -> Directory | None:
-    """Search a term in a user directory, returns False if no matches."""
-    search_result = dir.copy()
+    async def run(self):
+        """Run the server, indefinitely accept client requests."""
+        print(f"Starting server on {self.bind_address}")
+        await curio.tcp_server(*self.bind_address, self.client_daemon)
 
-    def search(x: Directory | File) -> bool:
-        if term in x.name:
-            return True
-        match x:
-            case File():
-                return False
-            case Directory():
-                x.contents = [y for y in x.contents if search(y)]
-                return x.contents != []
+    async def declare_dir(self, user: User, dir: Directory):
+        """Declare a directory."""
+        self.declared_dirs[user].append(dir)
+        for x in dir:
+            if isinstance(x, File):
+                if x.hash not in self.users_by_hash:
+                    self.users_by_hash[x.hash] = [user]
+                else:
+                    self.users_by_hash[x.hash].append(user)
 
-    if not search(search_result):
-        return None
-    else:
-        return search_result
+    async def search(self, search_term: str) -> dict[User, list[Directory]]:
+        """Search a term across all declared directories."""
+        return {user: [searched for dir in dirs if (searched := dir & search_term)] for user, dirs in self.declared_dirs.items()}
 
+    def remove_user(self, user: User):
+        """Remove user."""
+        del self.users_by_username[user.username]
+        del self.declared_dirs[user]
+        for file_hash, users in self.users_by_hash.items():
+            if user in users:
+                users.remove(user)
+            if users == []:
+                del self.users_by_hash[file_hash]
 
-def add_user_dir(clientaddr, dir: Directory):
-    """Register a user directory, recursively adding files into `files`."""
-    declared_dirs.append(dir)
+    def add_user(self, user: User, password: str):
+        """Register new user with password. Raise PermissionError if user already registered."""
+        # TODO: handle user already existing case
+        self.users_by_username[user.username] = (user, password)
+        self.declared_dirs[user] = []
 
-    def get_all_file_hashes(dir: Directory):
-        for x in dir.contents:
-            match x:
-                case File():
-                    yield x.hash
-                case Directory():
-                    yield from get_all_file_hashes(x)
+    async def client_daemon(self, client: curio.io.Socket, addr: tuple[str, int]):
+        """Start communication with client.
 
-    for filehash in get_all_file_hashes(dir):
-        files[filehash].add(clientaddr)
+        client: The newly received socket connection to the user.
+        addr: IP-address and port of the client socket.
+        """
+        try:
+            login_details = await read_message(client)
+        except ValueError as e:
+            await send_message(client, Error(error_text=str(e)))
+            return
+        if not isinstance(login_details, Login):
+            await send_message(client, Error(error_text="Should be login! BYE!"))
+            return
 
+        user = User(login_details.username, addr[0])
+        self.add_user(user, login_details.password)
+        await send_message(client, Ok())
+        print(f"New client connected: {user}")
 
-async def receive_message(client: curio.io.Socket, addr: tuple[str, int]):
-    """Receive a message from a client connection, and return response."""
-    print(client, type(client))
-    print(addr, type(addr))
-    msg: bytearray = bytearray()
-    while data := await client.recv(RECV_SIZE):  # BUG: Can potentially cause exception
-        msg += data
-    response = await process_message(addr, msg.decode())
-    logging.info(f"Received message from {addr}: {msg}")
-    logging.info(f"Sending response: {response}")
-    await client.sendall(response)
+        while True:
+            try:
+                message = await read_message(client)
+            except ValueError as e:
+                await send_message(client, Error(error_text=str(e)))
+                continue
+            except ConnectionError as e:
+                print(e)
+                self.remove_user(user)
+                return
 
+            match message:
+                case Ping(message=msg):
+                    response = Pong(message=msg)
+                case Declare(directory=dir):
+                    await self.declare_dir(user, dir)
+                    response = Ok()
+                case All():
+                    response = SearchResults(results=self.declared_dirs)
+                    print(response)
+                case Query(file_hash=hash):
+                    response = QuerySearchResults(results=self.users_by_hash[hash])
+                case Search(search_term=term):
+                    response = SearchResults(results=await self.search(term))
+                case _:
+                    response = Error(error_text="Unrecognized or unsupported message!")
 
-async def process_message(clientaddr: tuple[str, int], msg: str) -> bytes:
-    """Parse a single user message, returning a response."""
-    if msg == 'ping':
-        return b"I'm awake!"
-    elif msg.startswith('DECLAREDIR'):
-        dir = decode(msg.split(maxsplit=1)[1])
-        if isinstance(dir, File):
-            return b"File declaration unsupported"
-        add_user_dir(clientaddr, dir)
-        return f'Sure mate, {dir.name} was added'.encode()
-    elif msg == 'ALL':
-        return Directory('ALL FILES', declared_dirs).to_json().encode()
-    elif msg.startswith('QUERY'):
-        filehash = msg.split(maxsplit=1)[1]
-        if users_with_file := files.get(filehash):
-            return json.dumps(list(users_with_file)).encode()
-        return b'NOUSERS'
-    elif msg.startswith('SEARCH'):
-        search_term = msg.split(maxsplit=1)[1]
-        search_results: list[Directory] = []
-        for x in declared_dirs:
-            y = search_user_dir(x, search_term)
-            if y is not None:
-                search_results.append(y)
-        return Directory('SEARCH RESULTS', search_results).to_json().encode()
-    else:
-        return b"UNSUPPORTED"
+            try:
+                await send_message(client, response)
+            except ConnectionError as e:
+                print(e)
+                self.remove_user(user)
+                return
 
 
 def main():
-    logging.info('Started. Currently supports "ping", "all" and "declare" command(s).')
+    server = Server()
     try:
-        curio.run(curio.tcp_server, '', 25000, receive_message)
+        curio.run(server.run)
     except KeyboardInterrupt:
-        logging.info("Server shutting down...")
+        print("Shutting down...")
 
 if __name__ == '__main__':
     main()
