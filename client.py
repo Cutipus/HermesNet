@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from signal import signal, SIGINT
 from typing import Optional
-from curio import run, run_in_thread, open_connection, UniversalQueue, sleep
+from curio import Kernel, Task, TaskGroup, UniversalEvent, run, run_in_thread, open_connection, UniversalQueue, sleep, spawn
 import curio.io
 from directories import Directory, File
 from pathlib import Path
@@ -55,16 +55,12 @@ class ServerProtocol:
         self.sock: Optional[curio.io.Socket] = None
         self.login_details: LoginDetails = login
         self.retry_timer = retry_timer
+        self.closed = False
 
         if not DEFAULT_DOWNLOAD_DIR.exists():
             DEFAULT_DOWNLOAD_DIR.mkdir()
 
-    async def run(self) -> None:
-        """Run the daemon to communicate with the server."""
-        await self.connect()
-        await self.login()
-
-    async def connect(self) -> None:
+    async def __aenter__(self) -> None:
         """Connect to server and send login."""
         while True:
             try:
@@ -74,20 +70,28 @@ class ServerProtocol:
                 print("Connection to server failed! Retrying...")
                 await sleep(self.retry_timer)
 
+    async def __aexit__(self, *_) -> None:
+        """Closes the server """
+        if self.sock is not None:
+            await self.sock.close()
+            self.sock = None
+
+
     async def send_message_get_response(self, message: ServerMessage) -> ServerMessage:
         """Send a message to the server, and return a response."""
         assert self.sock is not None # this command should only be run *after* run()
 
-        while True:
-            try:
-                await send_message(self.sock, message)
-                return await read_message(self.sock)
-            except ConnectionError as e:
-                print("Connection to server failed! Retrying...")
-                await self.run()
-                await sleep(self.retry_timer)
-            except ValueError as e:
-                return Error(error_text=str(e))
+        if self.closed:
+            raise ValueError("I/O operation on a closed server.")
+
+        try:
+            await send_message(self.sock, message)
+            return await read_message(self.sock)
+        except ConnectionError as e:
+            print("Connection to server failed! Retrying...")
+            raise ConnectionError("Connection to server failed!")
+        except ValueError as e:
+            return Error(error_text=str(e))
 
     async def ping(self) -> bool:
         """Pings the server, returning True if server is online else False."""
@@ -187,8 +191,9 @@ class Client:
 
         signal(SIGINT, lambda signo, frame: self.quit())
 
-        await self.server_comm.run()
-        await self.stdinput_loop()
+        async with self.server_comm:
+            await self.server_comm.login()
+            await self.stdinput_loop()
 
     async def auto_pinger(self):
         """Indefinitely ping the server, updating connection status."""
@@ -214,12 +219,12 @@ class Client:
 
     async def stdinput_loop(self):
         """User input REPL."""
+        # How do you cancel this from
         while True:
             try:
-                user_input = await run_in_thread(input, ">> ")
+                user_input: str = await run_in_thread(input, ">> ")
             except EOFError:
-                print("Closing!")
-                break
+                return
 
             try:
                 await self.process_stdinput(user_input)
@@ -277,7 +282,6 @@ class Client:
                 return
             case _:
                 print("Unknown command: ", command)
-
 
     def download(self, item: Directory | File, dldir: Path = DEFAULT_DOWNLOAD_DIR):
         """Download a directory or file.
@@ -345,9 +349,7 @@ class Client:
 
     def quit(self) -> str:
         """Close the client."""
-        logging.debug("Sending quit signal")
-        self.signals.put("quit")  # UniversalQueue can run from non-async code # pyright: ignore
-        return 'Quitting...'
+        raise KeyboardInterrupt
 
 
 async def main():
@@ -357,4 +359,10 @@ async def main():
 
 
 if __name__ == '__main__':
-    run(main)
+    kernel = Kernel()
+    try:
+        kernel.run(main)
+    except KeyboardInterrupt:
+        print("Quitting.")
+    finally:
+        kernel.run(shutdown=True)
