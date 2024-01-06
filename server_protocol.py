@@ -11,6 +11,7 @@ CHUNK_SIZE = 1024
 FRAME_SIZE = 4
 COMMAND_SIZE = 1
 
+type SearchResultBase = list[tuple[tuple[str, str], list[dict]]]
 
 class Socket(Protocol):
     async def sendall(self, data: bytes):
@@ -44,9 +45,6 @@ class User(NamedTuple):
     """Represents a user."""
     username: str
     ip_address: str
-
-    def to_dict(self):
-        return {'username': self.username, 'ip_address': self.ip_address}
 
 
 @dataclass(kw_only=True)
@@ -126,6 +124,7 @@ class Pong(ServerMessage):
     def from_bytes(cls, data: bytes) -> Self:
         return cls(message=data.decode())
 
+
 @dataclass(kw_only=True)
 class All(ServerMessage):
     """Ask for all the directories declared on the server."""
@@ -190,7 +189,8 @@ class SearchResults(ServerMessage):
     results: dict[User, list[Directory]]
 
     def __bytes__(self) -> bytes:
-        return super().__bytes__() + dumps(self.results, default=lambda x: x.to_dict()).encode()
+        basic_results: SearchResultBase = [((name, ip), [d.to_dict() for d in dirs]) for (name, ip), dirs in self.results.items()]
+        return super().__bytes__() + dumps(basic_results).encode()
 
     @classmethod
     def from_bytes(cls, data: bytes) -> Self:
@@ -198,13 +198,14 @@ class SearchResults(ServerMessage):
         results: dict[User, list[Directory]] = dict()
 
         try:
-            parsed: dict[tuple[str, str], list[dict]] = loads(data)
+            parsed: SearchResultBase = loads(data)
         except JSONDecodeError:
             raise ValueError(f"Can't parse {data}")
 
         # TODO: make sure all values are correct type!
         try:
-            for (username, ip_addr), directory_dicts in parsed.items():
+            directory_dicts: list
+            for (username, ip_addr), directory_dicts in parsed:
                 user = User(username, ip_addr)
                 dirs: list[Directory] = []
                 for dir_dict in directory_dicts:
