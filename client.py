@@ -40,8 +40,7 @@ class LoginDetails(NamedTuple):
 class ServerProtocol:
     """The protocol to communicate with the server.
 
-    TODO: username
-    TODO: answer pings from server
+    Represents a single connection session to the server.
     """
 
     def __init__(self, server_address: tuple[str, int], login: LoginDetails, retry_timer: int = 1) -> None:
@@ -57,25 +56,20 @@ class ServerProtocol:
         self.retry_timer = retry_timer
         self.closed = False
 
+        # why is this here?
         if not DEFAULT_DOWNLOAD_DIR.exists():
             DEFAULT_DOWNLOAD_DIR.mkdir()
 
     async def __aenter__(self) -> None:
         """Connect to server and send login."""
-        while True:
-            try:
-                self.sock = await open_connection(*self.server_address)
-                break
-            except ConnectionError:
-                print("Connection to server failed! Retrying...")
-                await sleep(self.retry_timer)
+        self.sock = await open_connection(*self.server_address)
 
     async def __aexit__(self, *_) -> None:
         """Closes the server """
         if self.sock is not None:
             await self.sock.close()
             self.sock = None
-
+        self.closed = True
 
     async def send_message_get_response(self, message: ServerMessage) -> ServerMessage:
         """Send a message to the server, and return a response."""
@@ -87,18 +81,12 @@ class ServerProtocol:
         try:
             await send_message(self.sock, message)
             return await read_message(self.sock)
-        except ConnectionError as e:
-            print("Connection to server failed! Retrying...")
-            raise ConnectionError("Connection to server failed!")
         except ValueError as e:
             return Error(error_text=str(e))
 
     async def ping(self) -> bool:
         """Pings the server, returning True if server is online else False."""
-        try:
-            response = await self.send_message_get_response(Ping())
-        except ConnectionError:
-            return False
+        response = await self.send_message_get_response(Ping())
 
         match response:
             case Pong() | Ok():
@@ -122,7 +110,7 @@ class ServerProtocol:
         """Request a list of all the declared directories from the server.
 
         Returns a list of (User, Directory) pairs of all the declared files.
-        Can raise ConnectionError or ValueError.
+        Can raise ValueError.
         """
         match await self.send_message_get_response(All()):
             case SearchResults() as results:
@@ -135,7 +123,6 @@ class ServerProtocol:
     async def declare_directory(self, directory: Directory | Path | str) -> Ok:
         """Send a directory structure to the server, declaring files available.
 
-        Can raise ConnectionError if server is offline
         Can raise FileNotFoundError if can't find the directory
         Can raise ValueError if poor response
         """
@@ -151,7 +138,7 @@ class ServerProtocol:
     async def query_file(self, filehash: str) -> QuerySearchResults:
         """Query a file by hash from the server, returns a list of clients.
 
-        Can raise ConnectionError and ValueError.
+        Can raise ValueError.
         """
         match await self.send_message_get_response(Query(file_hash=filehash)):
             case QuerySearchResults() as response:
@@ -163,7 +150,6 @@ class ServerProtocol:
         """Request the server for all search results.
 
         Returns a list of partial user-declared directories containing search results.
-        Can raise ConnectionError if server is offline
         Can raise ValueError
         """
         match await self.send_message_get_response(Search(search_term=search_term)):
@@ -191,9 +177,15 @@ class Client:
 
         signal(SIGINT, lambda signo, frame: self.quit())
 
-        async with self.server_comm:
-            await self.server_comm.login()
-            await self.stdinput_loop()
+        while True:
+            # automatically reconnect to server on disconnect
+            try:
+                async with self.server_comm:
+                    await self.server_comm.login()
+                    await self.stdinput_loop()
+            except ConnectionError:
+                print("Connection error... Retrying.")
+                await sleep(1)
 
     async def auto_pinger(self):
         """Indefinitely ping the server, updating connection status."""
