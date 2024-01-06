@@ -65,6 +65,10 @@ class Server:
         except ValueError as e:
             await send_message(client, Error(error_text=str(e)))
             return
+        except ConnectionError:
+            print("User disconnected...")
+            return
+
         if not isinstance(login_details, Login):
             await send_message(client, Error(error_text="Should be login! BYE!"))
             return
