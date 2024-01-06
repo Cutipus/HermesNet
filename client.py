@@ -40,21 +40,23 @@ class LoginDetails(NamedTuple):
 class ServerProtocol:
     """The protocol to communicate with the server.
 
-    Represents a single connection session to the server.
+    All methods should only be executed from the context manager:
+
+    with ServerProtocol(("address", 1234), LoginDetails("foo", "bar")) as sp:
+        sp.login()
+        sp.ping()
     """
 
     def __init__(self, server_address: tuple[str, int], login: LoginDetails, retry_timer: int = 1) -> None:
         """Initialize the server communication with the server address.
 
         server_address: The server's IP address and port
-        login: The username and password to identify with
         sock: the socket to the server - None if it's not initialized yet
+        login_details: The username and password to identify with
         """
         self.server_address = server_address
         self.sock: Optional[curio.io.Socket] = None
         self.login_details: LoginDetails = login
-        self.retry_timer = retry_timer
-        self.closed = False
 
         # why is this here?
         if not DEFAULT_DOWNLOAD_DIR.exists():
@@ -69,13 +71,12 @@ class ServerProtocol:
         if self.sock is not None:
             await self.sock.close()
             self.sock = None
-        self.closed = True
 
     async def send_message_get_response(self, message: ServerMessage) -> ServerMessage:
         """Send a message to the server, and return a response."""
         assert self.sock is not None # this command should only be run *after* run()
 
-        if self.closed:
+        if self.sock is None:
             raise ValueError("I/O operation on a closed server.")
 
         try:
@@ -211,7 +212,6 @@ class Client:
 
     async def stdinput_loop(self):
         """User input REPL."""
-        # How do you cancel this from
         while True:
             try:
                 user_input: str = await run_in_thread(input, ">> ")
