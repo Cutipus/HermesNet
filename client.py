@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from signal import signal, SIGINT
 from typing import Optional
-from curio import Kernel, Task, TaskGroup, UniversalEvent, run, run_in_thread, open_connection, UniversalQueue, sleep, spawn
+from curio import Kernel, run_in_thread, open_connection, UniversalQueue, sleep
 import curio.io
 from directories import Directory, File
 from pathlib import Path
@@ -47,7 +47,7 @@ class ServerProtocol:
         sp.ping()
     """
 
-    def __init__(self, server_address: tuple[str, int], login: LoginDetails, retry_timer: int = 1) -> None:
+    def __init__(self, server_address: tuple[str, int], login: LoginDetails) -> None:
         """Initialize the server communication with the server address.
 
         server_address: The server's IP address and port
@@ -216,6 +216,7 @@ class Client:
             try:
                 user_input: str = await run_in_thread(input, ">> ")
             except EOFError:
+                self.quit()
                 return
 
             try:
@@ -282,8 +283,9 @@ class Client:
         """
         # TODO: per-user download folder
         if isinstance(item, File):
-            pass  # The actual download logic
+            print("fake: downloading", item)
         elif isinstance(item, Directory):
+            print("downloading ", Directory.name)
             dldir /= item.name
             if not dldir.exists():
                 dldir.mkdir()
