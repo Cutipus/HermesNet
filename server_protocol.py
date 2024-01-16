@@ -60,10 +60,8 @@ class ServerMessage():
         if bytecode not in cls._registered_message_types:
             raise ValueError(f"{bytecode} is an unsupported command code.")
 
-        if rest_of_data := bts[COMMAND_SIZE:]:
-            return cls._registered_message_types[bytecode].from_bytes(rest_of_data)
-        else:
-            return cls._registered_message_types[bytecode]()
+        message_data = bts[COMMAND_SIZE:]
+        return cls._registered_message_types[bytecode].from_bytes(message_data)
 
     def __init_subclass__(cls, **kwargs):
         """Register new subclasses of ServerMessage based on their commandcode."""
