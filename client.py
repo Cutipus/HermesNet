@@ -297,8 +297,14 @@ class Client:
         """Process the user input to select something from a list.
 
         Can raise ValueError if bad user input."""
+        if not lst:
+            raise ValueError("Empty selection list")
+
+        for index, x in enumerate(lst):
+            print(index, x)
+
         try:
-            return lst[int(input("Select element: ")) if selection is None else int(selection)]
+            return lst[int(input("Select element: ") if selection is None else selection) ]
         except ValueError:
             raise ValueError("NaN try again!")
         except IndexError:
