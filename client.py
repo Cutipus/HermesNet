@@ -13,6 +13,7 @@ from server_protocol import *
 
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
+type SelectionOption[T] = tuple[str, T]
 RECV_SIZE: int = 1024 ** 2
 TRACKER_ADDRESS: tuple[str, int] = "localhost", 25000
 DECLARE_DIR: str = 'DECLAREDIR {}'
@@ -170,7 +171,7 @@ class Client:
         self.server_comm: ServerProtocol = ServerProtocol(self.address, login)
         self.connected: bool | None = None  # None if not pinged yet
         self.signals: UniversalQueue = UniversalQueue()
-        self.history: list[tuple[str, SearchResults]] = []
+        self.history: list[SelectionOption[SearchResults]] = []
 
     async def run(self):
         """Start the client daemons and REPL."""
@@ -293,38 +294,41 @@ class Client:
                 self.download(x, dldir)
             pass  # create dir, download children inside modified dldir
 
-    def cmd_select[T](self, lst: list[T], selection: Optional[str]=None) -> T:
+    def cmd_select[T](self, lst: list[SelectionOption[T]], selection: Optional[str]=None) -> SelectionOption[T]:
         """Process the user input to select something from a list.
 
+        If selection is specified then no user input is taken.
         Can raise ValueError if bad user input."""
-        if not lst:
+        if len(lst) == 0:
             raise ValueError("Empty selection list")
 
-        for index, x in enumerate(lst):
-            print(index, x)
+        if selection is not None:
+            print(
+                *(f'{index} - {name}\n{option}' for index, (name, option) in enumerate(lst)),
+                sep='\n',
+                )
 
         try:
-            return lst[int(input("Select element: ") if selection is None else selection) ]
+            index = int(input("Select element: ") if selection is None else selection)
+            return lst[index]
         except ValueError:
             raise ValueError("NaN try again!")
         except IndexError:
             raise ValueError("Bad index try again!")
 
     def cmd_select_search_result(self, search_result: SearchResults) -> Directory | File:
-        """Select items to download from search result.
+        """Select a file or directory to download from a search.
 
-        Can raise ValueError if bad user selection
+        Can raise ValueError if bad user selection or empty list
         """
-        index = 0
-        items: list[Directory] = []
-        for user, dirs in search_result.results.items():
-            for dir in dirs:
-                items.append(dir)
-                print(index, user, dir)
-                index += 1
-
-        selected_dir = self.cmd_select(items)
-        return self.cmd_select(list(selected_dir))
+        results = search_result.results
+        if len(results) == 0:
+            raise ValueError("No results to choose from")
+        x = [(a, b) for a, b in zip(range(10), range(10))]
+        items: list[SelectionOption[Directory]] = [(user, d) for user, ds in search_result.results.items() for d in ds]
+        user, dir = self.cmd_select(items)
+        selected_subdir = self.cmd_select([(user, x) for x in dir])
+        return selected_subdir[1]
 
     async def cmd_search(self, query: str) -> SearchResults:
         """Search a term, store the result in history."""
