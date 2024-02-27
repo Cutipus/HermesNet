@@ -1,3 +1,4 @@
 _*
-whattodo.md
-venv/
+*__pycache__/
+.venv/
+*.log
