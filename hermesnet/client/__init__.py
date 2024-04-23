@@ -1,3 +1,6 @@
 __ALL__ = ['client_term', 'client']
 
-from .network import ClientSession, ServerError
+from .network import (
+        ClientSession as ClientSession,
+        ServerError as ServerError,
+        )
