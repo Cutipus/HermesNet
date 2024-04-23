@@ -7,7 +7,7 @@ description = "A distributed file sharing application inspired by SoulSeek and T
 readme = "README.md"
 license = { file = "LICENSE" }
 keywords = ["network", "distributed", "file sharing"]
-dependencies = ["curio @ git+https://github.com/dabeaz/curio"]
+dependencies = ["pytest", "pytest-cov"]
 requires-python = ">= 3.12"
 
 [project.urls]
