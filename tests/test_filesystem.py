@@ -9,6 +9,7 @@ import json
 def file() -> filesystem.File:
     return filesystem.File('Lorem', 'Ipsum', 400)
 
+# NOTE: Is this a good idea?
 @pytest.fixture
 def directory() -> filesystem.Directory:
     return filesystem.Directory("meow", contents=[
@@ -36,6 +37,7 @@ def test_file_from_path(tmp_path: pathlib.Path) -> None:
     assert file == filesystem.File(file_name, file_hash, len(file_content))
 
 
+# NOTE: Unnecessary to check
 def test_file_to_dict(file: filesystem.File) -> None:
     assert file.to_dict() == {
             'type': 'file',
@@ -45,6 +47,7 @@ def test_file_to_dict(file: filesystem.File) -> None:
     }
 
 
+# NOTE: Unnecessary to check
 def test_file_to_json(file: filesystem.File) -> None:
     assert file.to_json() == json.dumps({
             'type': 'file',
@@ -61,10 +64,12 @@ def test_file_search(file: filesystem.File) -> None:
     assert file.search(file.name[:3]) is not None
 
 
+# NOTE: Unnecessary
 def test_directory_copy(directory: filesystem.Directory) -> None:
     assert directory.copy() == directory
 
 
+# NOTE: Need a better way to generate this data
 def test_directory_from_path(tmp_path: pathlib.Path):
     def create_test_dir(tmp_path: pathlib.Path) -> pathlib.Path:
         d = tmp_path / "test dir"
