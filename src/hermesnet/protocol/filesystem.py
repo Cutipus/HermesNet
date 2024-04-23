@@ -108,8 +108,6 @@ class File:
 class Directory:
     """Represents a recursive directory holding files and subdirectories.
 
-    
-
     Attributes:
         name: The directory's name.
         contents: The files and directories inside the directory.
