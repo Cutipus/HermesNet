@@ -10,7 +10,7 @@ Logging:
     Logging functionality is provided for debugging and monitoring.
 
 Concurrency:
-    Uses 'curio' for async and I/O.
+    Uses 'asyncio' for async and I/O.
 
 Example:
     class PingProcessor:
@@ -45,8 +45,9 @@ from typing import Protocol
 from dataclasses import dataclass
 import logging.config
 
-# curio
-import curio, curio.io
+# asyncio
+import asyncio
+#import curio, curio.io
 
 # project
 from hermesnet import protocol as sprotocol
@@ -57,7 +58,7 @@ _logger = logging.getLogger(__name__)
 
 class Processor(Protocol):
     """A Protocol to represet a processor that can be used with the server."""
-    def add_client(self, addr: tuple[str, int]) -> AbstractAsyncContextManager[tuple[curio.Queue, curio.Queue]]:
+    def add_client(self, addr: tuple[str, int]) -> AbstractAsyncContextManager[tuple[asyncio.Queue[sprotocol.ServerMessage], asyncio.Queue[sprotocol.ServerMessage]]]:
         ...
 
 
@@ -77,9 +78,9 @@ class Server:
     async def run(self):
         """Run the server, Indefinitely accept clients."""
         _logger.info(f"Starting server on {self.host}:{self.port}.")
-        await curio.tcp_server(self.host, self.port, self._handle_new_client)
+        await asyncio.start_server(self._handle_new_client, self.host, self.port)
 
-    async def _handle_new_client(self, sock: curio.io.Socket, addr: tuple[str, int]):
+    async def _handle_new_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """Handle the lifetime of a single connected client.
 
         First, creates a request/response queue pair for processing the
@@ -92,8 +93,12 @@ class Server:
             sock: The client's connection - closed at the end of the function.
             addr: The client's unique IP/Port address.
         """
+        addr: tuple[str, int] | None = writer.get_extra_info('peername')
+        if addr is None:
+            raise Exception()  # TODO: networkerror?
+
         _logger.info(f"{addr}: Connected.")
-        client = sprotocol.Session(sock)
+        client = sprotocol.Session(reader, writer)
         _logger.debug(f"{addr}: Prepared Protocol object - {client}")
         async with self.processor.add_client(addr) as (request_queue, response_queue):
             _logger.debug(f"{addr}: Received request/response queues.")

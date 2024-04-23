@@ -15,7 +15,7 @@ import signal
 from typing import Optional
 
 # curio
-import curio
+import asyncio
 
 # project
 from hermesnet.client import network
@@ -58,7 +58,7 @@ class CliClient:
         run: Start the client, processing user input indefinitely.        
     """
 
-    def __init__(self, address: tuple[str, int], prompt=DEFAULT_PROMPT, download_dir=DEFAULT_DOWNLOAD_DIR):
+    def __init__(self, address: tuple[str, int], prompt: str=DEFAULT_PROMPT, download_dir: pathlib.Path=DEFAULT_DOWNLOAD_DIR):
         """Initialize client with server's address.
 
         Parameters:
@@ -84,13 +84,14 @@ class CliClient:
                     await self._stdinput_loop(client_session)
             except ConnectionError:
                 print("Connection error... Retrying.")
-                await curio.sleep(1)
+                await asyncio.sleep(1)
 
     async def _stdinput_loop(self, client_session: network.ClientSession):
         """User input REPL."""
         while True:
             try:
-                user_input: str = await curio.run_in_thread(input, self.prompt)
+                user_input: str =  await asyncio.get_running_loop().run_in_executor(
+                        None, lambda : input(self.prompt))
             except EOFError:
                 self._quit()
                 return
@@ -228,10 +229,7 @@ async def main():
 
 
 if __name__ == '__main__':
-    kernel = curio.Kernel()
     try:
-        kernel.run(main)
+        asyncio.run(main())
     except KeyboardInterrupt:
         print("Quitting.")
-    finally:
-        kernel.run(shutdown=True)

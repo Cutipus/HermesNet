@@ -29,7 +29,7 @@ Classes:
     QuerySearchResults: A response to Query with all the users.
 """
 # stdlib
-from typing import ClassVar, NamedTuple, Self
+from typing import Any, ClassVar, NamedTuple, Self
 from dataclasses import dataclass
 import json
 
@@ -200,27 +200,32 @@ class SearchResults(ServerMessage):
     def _from_bytes(cls, data: bytes) -> Self:
         # can raise ValueError
         results: dict[User, list[filesystem.Directory]] = dict()
-
         try:
             parsed: list[Any] | Any = json.loads(data)
         except json.JSONDecodeError:
             raise ValueError(f"Can't parse {data}")
-
-        # TODO: make sure all values are correct type!
-        try:
-            directory_dicts: list
-            for (username, ip_addr), directory_dicts in parsed:
-                user = User(username, ip_addr)
-                dirs: list[filesystem.Directory] = []
-                for dir_dict in directory_dicts:
-                    dir = filesystem.parse(dir_dict)
-                    if not isinstance(dir, filesystem.Directory):
-                        raise ValueError(f"{dir} is not a Directory")
-                    dirs.append(dir)
-                results[user] = dirs
-        except TypeError:
+        if not isinstance(parsed, list):
             raise ValueError(f"Can't parse {data}")
-
+        entry: tuple[tuple[Any, Any], Any] | Any
+        for entry in parsed:
+            try:
+                (username, ip_addr), directory_dicts = entry
+            except (ValueError, TypeError):
+                raise ValueError(f"Can't parse {data}")
+            if not isinstance(username, str) or not isinstance(ip_addr, str) or not isinstance(directory_dicts, list):
+                raise ValueError(f"Can't parse {data}")
+            user = User(username, ip_addr)
+            dirs: list[filesystem.Directory] = []
+            dir_dict: Any
+            for dir_dict in directory_dicts:
+                try:
+                    dir = filesystem.parse(dir_dict)
+                except ValueError:
+                    raise ValueError(f"Can't parse {data}")
+                if not isinstance(dir, filesystem.Directory):
+                    raise ValueError(f"Can't parse {data}")
+                dirs.append(dir)
+            results[user] = dirs
         return cls(results=results)
 
 

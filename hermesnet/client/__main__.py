@@ -1,5 +1,5 @@
 import logging.config
-import curio
+import asyncio
 
 from hermesnet.client import client_term
 
@@ -14,7 +14,7 @@ _logger.addHandler(_file_handler)
 def main():
     c = client_term.CliClient(('127.0.0.1', 13371))
     try:
-        curio.run(c.run())
+        asyncio.run(c.run())
     except KeyboardInterrupt:
         print("Sayonara!")
 

@@ -18,8 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import logging
 
-# curio
-from curio.io import Socket
+# asyncio
+from asyncio import StreamReader, StreamWriter
 
 # project
 from hermesnet.protocol import messages
@@ -35,7 +35,8 @@ class Session:
     """A class representing the connection between client and server.
 
     Attributes:
-        sock: The socket connection.
+        reader: The asyncio StreamReader.
+        writer: The asyncio StreamWriter.
         addr: The connection address.
 
     Methods:
@@ -43,12 +44,14 @@ class Session:
         send_message: Send a message to the server.
         disconnect: Send a disconnect message and close the socket connection.
     """
-    sock: Socket
+    
+    reader: StreamReader
+    writer: StreamWriter
     addr: tuple[str, int] = field(init=False)
     _is_closed: bool = field(default=False, init=False)
 
     def __post_init__(self):
-        self.addr = self.sock.getpeername()
+        self.addr = self.writer.get_extra_info('peername')
         _logger.debug(f"New Session at {self.addr}")
 
     async def read_message(self) -> messages.ServerMessage:
@@ -57,7 +60,7 @@ class Session:
             raise ValueError("I/O operation on closed socket.")
 
         try:
-            if not (frame := await self.sock.recv(FRAME_SIZE)):
+            if not (frame := await self.reader.read(FRAME_SIZE)):
                 self._is_closed = True
                 raise ConnectionAbortedError("Connection closed while reading frame.")
         except OSError:
@@ -70,14 +73,14 @@ class Session:
         while len(msg) < message_length:            
             _logger.debug(f"msg: {msg}")
             try:
-                if not (chunk := await self.sock.recv(CHUNK_SIZE)):
+                if not (chunk := await self.reader.read(CHUNK_SIZE)):
                     raise ConnectionAbortedError("Connection closed while reading message.")
             except OSError:
                 self._is_closed = True
                 raise ConnectionAbortedError("Connection closed while reading message.")
             msg += chunk
         _logger.debug(f"msg: {msg}")
-        return messages.from_bytes(msg)
+        return messages.from_bytes(bytes(msg))
 
     async def send_message(self, message: messages.ServerMessage):
         """Read a message from the server."""
@@ -86,7 +89,8 @@ class Session:
         encoded_message = bytes(message)
         try:
             _logger.debug(f"Sending message: {len(encoded_message).to_bytes(FRAME_SIZE) + encoded_message}")
-            await self.sock.sendall(len(encoded_message).to_bytes(FRAME_SIZE) + encoded_message)
+            self.writer.write(len(encoded_message).to_bytes(FRAME_SIZE) + encoded_message)
+            await self.writer.drain()
         except OSError:
             self._is_closed = True
             raise ConnectionAbortedError("Connection closed while reading frame.")
@@ -96,5 +100,6 @@ class Session:
         if self._is_closed:
             return
         await self.send_message(messages.Fin())
-        await self.sock.close()
+        self.writer.close()
+        await self.writer.wait_closed()
         self._is_closed = True

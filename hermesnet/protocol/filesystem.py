@@ -15,7 +15,7 @@ Functions:
     parse: Convert a dict to a File or Directory.
 """
 from __future__ import annotations
-from typing import Generator, Optional, Sequence
+from typing import Any, Generator, Optional, Sequence, TypeGuard, TypedDict
 from dataclasses import dataclass
 
 import pathlib
@@ -24,6 +24,18 @@ import json
 
 
 _BUFSIZE = 1024 ** 2  # chunk size to read from disk
+
+
+class FileDict(TypedDict):
+    type: str
+    name: str
+    hash: str
+    size: int
+
+class DirectoryDict(TypedDict):
+    type: str
+    name: str
+    contents: list[DirectoryDict | FileDict]
 
 
 @dataclass(eq=True)
@@ -64,7 +76,7 @@ class File:
         """Create a copy of the file."""
         return File(self.name, self.hash, self.size)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> FileDict:
         """Represent the file as a dict for JSON processing."""
         return {
             'type': 'file',
@@ -121,7 +133,7 @@ class Directory:
     def from_path(cls, path: pathlib.Path | str) -> Directory:
         """Create a directory from a directory path in file system."""
         path = pathlib.Path(path)
-        contents = []
+        contents: list[Directory | File] = []
         for x in path.iterdir():
             if x.is_file():
                 contents.append(File.from_path(x))
@@ -133,7 +145,7 @@ class Directory:
         """Create a copy of the directory."""
         return Directory(self.name, [x.copy() for x in self.contents])
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> DirectoryDict:
         """Represent dictionary as dict."""
         return {
             'type': 'directory',
@@ -159,7 +171,7 @@ class Directory:
         for x in self.contents:
             if isinstance(x, Directory):
                 yield from x
-            elif isinstance(x, File):
+            else:
                 yield x
 
     def __repr__(self):
@@ -191,11 +203,11 @@ def decode(encoded: bytes | str) -> File | Directory:
         ValueError: If the JSON doesn't parse to a File | Directory.
     """
     # TODO: process `loads` using curio in background
-    loaded: dict = json.loads(encoded)
+    loaded: dict[Any, Any] = json.loads(encoded)
     return parse(loaded)
 
 
-def parse(data: dict) -> File | Directory:
+def parse(data: dict[Any, Any]) -> File | Directory:
     """Parse dict to a File or Directory.
     
     Parameters:
@@ -204,10 +216,15 @@ def parse(data: dict) -> File | Directory:
     Raises:
         ValueError: If the dict cannot be parsed.
     """
+
+    def list_of_dicts(lst: Sequence[Any]) -> TypeGuard[list[dict[Any, Any]]]:
+        return all(isinstance(item, dict) for item in lst)
+
     match data:
         case {'type': 'file', 'name': str(name), 'hash': str(hash), 'size': int(size)}:
             return File(name, hash, size)
-        case {'type': 'directory', 'name': str(name), 'contents': list(contents)}:  #
-            return Directory(name, [parse(element) for element in contents])
+        case {'type': 'directory', 'name': str(name), 'contents': content} if list_of_dicts(content):
+            parsed_content = [parse(element) for element in content]
+            return Directory(name, parsed_content)
         case _:
             raise ValueError("Bad dict")

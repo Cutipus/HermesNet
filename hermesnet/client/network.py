@@ -22,10 +22,10 @@ Examples:
 # stdlib
 from __future__ import annotations
 import logging
-from typing import Self, assert_never, Optional, get_overloads, get_type_hints, overload
+from typing import Self, Optional, get_overloads, get_type_hints, overload
 
-# curio
-import curio
+# asyncio
+import asyncio
 
 # project
 from hermesnet import protocol as sprotocol
@@ -152,7 +152,7 @@ class ClientSession:
 
     async def __aenter__(self) -> Self:
         """Opens a connection to the server."""
-        self._protocol = sprotocol.Session(await curio.open_connection(*self._server_address))
+        self._protocol = sprotocol.Session(*await asyncio.open_connection(*self._server_address))
         _logger.info(f"Started session on {self._server_address}")
         return self
 

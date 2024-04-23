@@ -37,7 +37,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 # curio
-import curio, curio.io
+import asyncio
 
 # project
 from .. import protocol as sprotocol
@@ -281,7 +281,7 @@ class Processor:
         self.user_manager = UserManager()
 
     @asynccontextmanager
-    async def add_client(self, addr: tuple[str, int]) -> AsyncIterator[tuple[curio.Queue, curio.Queue]]:
+    async def add_client(self, addr: tuple[str, int]) -> AsyncIterator[tuple[asyncio.Queue[sprotocol.ServerMessage], asyncio.Queue[sprotocol.ServerMessage]]]:
         """A context manager to match a client handler with a client-session.
 
         Will send a Fin message when the context-manager is closed, stopping
@@ -297,16 +297,18 @@ class Processor:
                 print(await responses.get())
         """
         logger.debug(f"Adding new client from {addr}")
-        requests = curio.Queue()
-        responses = curio.Queue()
-        await curio.spawn(self._handle_client(addr, requests, responses), daemon=True)
+        requests: asyncio.Queue[sprotocol.ServerMessage] = asyncio.Queue()
+        responses: asyncio.Queue[sprotocol.ServerMessage] = asyncio.Queue()
+
+        await asyncio.create_task(self._handle_client(addr, requests, responses))
+
         logger.info(f"Started client handler for {addr}")
         try:
             yield requests, responses
         finally:
             await requests.put(sprotocol.Fin())
 
-    async def _handle_client(self, addr: tuple[str, int], requests: curio.Queue, responses: curio.Queue):
+    async def _handle_client(self, addr: tuple[str, int], requests: asyncio.Queue[sprotocol.ServerMessage], responses: asyncio.Queue[sprotocol.ServerMessage]):
         """Handle a single client's session, processing requests until disconnected.
 
         Will create a new user to represent the client.

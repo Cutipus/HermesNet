@@ -1,5 +1,7 @@
+"""Run script for the server."""
+
 import logging.config
-import curio
+import asyncio
 from hermesnet.common import log_config
 from hermesnet.server import Server, Processor
 
@@ -20,7 +22,7 @@ def main():
     s = Server('0.0.0.0', 13371, Processor())
     _logger.debug("Starting server...")
     try:
-        curio.run(s.run())
+        asyncio.run(s.run())
     except KeyboardInterrupt:
         print("Sayonara!")
 
