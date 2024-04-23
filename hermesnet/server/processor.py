@@ -319,11 +319,14 @@ class Processor:
         """
         logger.debug(f"Starting handler for {addr}")
         user = self.user_manager.create_guest(addr)
-        while not isinstance(user, OfflineGuest) and not isinstance(user, LoggedOutUser):
+        while True:
             logger.debug(f"{user}: Waiting for requests...")
             request = await requests.get()
             logger.info(f"{user}: Got request: {request}")
             user, response = await self._handle_request(user, request)
+            if isinstance(user, OfflineGuest) or isinstance(user, LoggedOutUser):
+                break
+            assert response is not None  # https://github.com/microsoft/pyright/discussions/7627
             logger.info(f"{user}: Sending response: {response}")
             await responses.put(response)
 
@@ -363,8 +366,6 @@ class Processor:
                 return user, self._query_file(hash)
             case LoggedInUser(), _:
                 return user, sprotocol.Error("Unrecognized command??")
-            case _:
-                assert_never((user, request))  # pyright: ignore # BUG: report stupid pyright error
 
     def _get_all_dirs(self) -> sprotocol.SearchResults:
         """Get all declared directories from all users."""
@@ -386,7 +387,7 @@ class Processor:
         """
         results: dict[sprotocol.User, list[sprotocol.Directory]] = {}
         for user in self.user_manager.logged_in_users:
-            searched_directories = []
+            searched_directories: list[sprotocol.Directory] = []
             for dir in user.declared_dirs:
                 if searched := dir.search(term):
                     searched_directories.append(searched)
@@ -407,7 +408,7 @@ class Processor:
 
     def _get_all_files(self) -> dict[str, list[sprotocol.User]]:
         """Create a mapping between all file hashes and the users who declared them."""
-        files = {}
+        files: dict[str, list[sprotocol.User]] = {}
         for user in self.user_manager.logged_in_users:
             for file in (file for dir in user.declared_dirs for file in dir if isinstance(file, sprotocol.File)):
                 if file.hash not in files:

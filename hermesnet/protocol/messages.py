@@ -38,7 +38,6 @@ from hermesnet.protocol import filesystem
 
 
 COMMAND_SIZE = 1
-type _SearchResultBase = list[tuple[tuple[str, str], list[dict]]]
 
 
 class User(NamedTuple):
@@ -64,13 +63,13 @@ class ServerMessage():
             raise ValueError(f"{bytecode} is an unsupported command code.")
 
         message_data = data[COMMAND_SIZE:]
-        return cls._registered_message_types[bytecode]._from_bytes(message_data)
+        return cls._registered_message_types[bytecode]._from_bytes(message_data) # type: ignore
 
     @classmethod
     def _from_bytes(cls, data: bytes) -> Self:
         return cls()
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, **kwargs: dict[Any, Any]):
         """Register new subclasses of ServerMessage based on their commandcode."""
         if cls.command in cls._registered_message_types:
             raise TypeError(f"Already exists a message class with command code {cls.command}.")
@@ -194,7 +193,7 @@ class SearchResults(ServerMessage):
     results: dict[User, list[filesystem.Directory]]
 
     def __bytes__(self) -> bytes:
-        basic_results: _SearchResultBase = [((name, ip), [d.to_dict() for d in dirs]) for (name, ip), dirs in self.results.items()]
+        basic_results = [((name, ip), [d.to_dict() for d in dirs]) for (name, ip), dirs in self.results.items()]
         return super().__bytes__() + json.dumps(basic_results).encode()
 
     @classmethod
@@ -203,7 +202,7 @@ class SearchResults(ServerMessage):
         results: dict[User, list[filesystem.Directory]] = dict()
 
         try:
-            parsed: _SearchResultBase = json.loads(data)
+            parsed: list[Any] | Any = json.loads(data)
         except json.JSONDecodeError:
             raise ValueError(f"Can't parse {data}")
 

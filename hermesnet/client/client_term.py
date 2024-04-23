@@ -72,7 +72,7 @@ class CliClient:
         self.history: list[SelectionOption[sprotocol.SearchResults]] = []
         signal.signal(signal.SIGINT, lambda signo, frame: self._quit())
 
-    async def run(self, show_helptext=True):
+    async def run(self, show_helptext: bool=True):
         """Start the client daemons and REPL."""
         if show_helptext:
             print(f"Available commands: {', '.join(COMMAND_HELPTEXT.keys())}")
@@ -172,7 +172,7 @@ class CliClient:
         # TODO: per-user download folder
         if isinstance(item, sprotocol.File):
             print("fake: downloading", item)
-        elif isinstance(item, sprotocol.Directory):
+        else:
             print("downloading ", item.name)
             dldir /= item.name
             if not dldir.exists():
@@ -211,7 +211,6 @@ class CliClient:
         results = search_result.results
         if len(results) == 0:
             raise ValueError("No results to choose from")
-        x = [(a, b) for a, b in zip(range(10), range(10))]
         items: list[SelectionOption[sprotocol.Directory]] = [(str(user), d) for user, ds in search_result.results.items() for d in ds]
         user, dir = self._cmd_select(items)
         selected_subdir = self._cmd_select([(user, x) for x in dir])

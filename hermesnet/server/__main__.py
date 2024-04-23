@@ -6,8 +6,7 @@ from hermesnet.server import Server, Processor
 
 _logger = logging.getLogger('hermesnet.server.__main__')
 
-
-log_config['handlers']['logfile'] = {
+log_config['handlers']['logfile'] = { # type: ignore
     'level': 'DEBUG',
     'formatter': 'standard',
     'class': 'logging.FileHandler',

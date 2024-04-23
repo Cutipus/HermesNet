@@ -149,8 +149,6 @@ class ClientSession:
             case sprotocol.ServerMessage():
                 _logger.info(f"Received wrong response type: {response}")
                 raise ServerError(f"Expected response of type {expected_response_type}, but  got {response} instead.")
-            case _:
-                assert_never(response)
 
     async def __aenter__(self) -> Self:
         """Opens a connection to the server."""
