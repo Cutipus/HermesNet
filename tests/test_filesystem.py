@@ -3,6 +3,21 @@ import pathlib
 import hashlib
 import pytest
 
+def create_test_dir(tmp_path: pathlib.Path) -> pathlib.Path:
+    d = tmp_path / "test dir"
+    d.mkdir()
+    (d / "byebye.txt").write_bytes(b"Sionara, World!")
+    (d / "hello world.txt").write_bytes(b"Hello, World!")
+    subdir1 = d / "subdir"
+    subdir1.mkdir()
+    (subdir1 / "Loremps.txt").write_bytes(b"Wow a loremp!")
+    (subdir1 / "hello world 2.txt").write_bytes(b"Hello, World!")
+    subdir2 = d / "Sub Directory"
+    subdir2.mkdir()
+    subdir3 = subdir2 / "SubSub Dir"
+    subdir3.mkdir()
+    (subdir3 / "Devlog.txt").write_bytes(b"Hewwo, world!!")
+    return d
 
 @pytest.fixture
 def file() -> filesystem.File:
@@ -31,22 +46,6 @@ def test_file_search(file: filesystem.File) -> None:
 # NOTE: Need a better way to generate this data
 @pytest.mark.asyncio
 async def test_directory_from_path(tmp_path: pathlib.Path):
-    def create_test_dir(tmp_path: pathlib.Path) -> pathlib.Path:
-        d = tmp_path / "test dir"
-        d.mkdir()
-        (d / "byebye.txt").write_bytes(b"Sionara, World!")
-        (d / "hello world.txt").write_bytes(b"Hello, World!")
-        subdir1 = d / "subdir"
-        subdir1.mkdir()
-        (subdir1 / "Loremps.txt").write_bytes(b"Wow a loremp!")
-        (subdir1 / "hello world 2.txt").write_bytes(b"Hello, World!")
-        subdir2 = d / "Sub Directory"
-        subdir2.mkdir()
-        subdir3 = subdir2 / "SubSub Dir"
-        subdir3.mkdir()
-        (subdir3 / "Devlog.txt").write_bytes(b"Hewwo, world!!")
-        return d
-
     dir_path = create_test_dir(tmp_path)
     dir = await filesystem.Directory.from_path(dir_path)
 
@@ -73,3 +72,10 @@ async def test_directory_from_path(tmp_path: pathlib.Path):
     ])
     assert dir == expected_dir
     assert unexpected_dir != expected_dir
+
+
+@pytest.mark.asyncio
+async def test_decode(tmp_path: pathlib.Path):
+    dir_path = create_test_dir(tmp_path)
+    dir = await filesystem.Directory.from_path(dir_path)
+    assert dir == filesystem.decode(dir.to_json())
