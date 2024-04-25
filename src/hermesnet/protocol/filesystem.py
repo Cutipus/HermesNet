@@ -17,10 +17,12 @@ Functions:
 from __future__ import annotations
 from typing import Any, Generator, Optional, Sequence, TypeGuard, TypedDict
 from dataclasses import dataclass
-
-import pathlib
 import hashlib
 import json
+import pathlib
+
+import aiofiles
+from aiofiles import os
 
 
 _BUFSIZE = 1024 ** 2  # chunk size to read from disk
@@ -61,13 +63,14 @@ class File:
     size: int
 
     @classmethod
-    def from_path(cls, path: pathlib.Path) -> File:
+    async def from_path(cls, path: pathlib.Path | str) -> File:
         """Create a file from a file location on system, calculating hash."""
+        path = pathlib.Path(path)
         name = path.name
-        filesize = path.stat().st_size
+        filesize = (await os.stat(path)).st_size
         filehash = hashlib.sha1()
-        with path.open("rb") as f:
-            while data := f.read(_BUFSIZE):
+        async with aiofiles.open(path, "rb") as f:
+            while data := await f.read(_BUFSIZE):
                 filehash.update(data)
         hash = filehash.hexdigest()
         return cls(name, hash, filesize)
@@ -128,15 +131,16 @@ class Directory:
     contents: Sequence[Directory | File]
 
     @classmethod
-    def from_path(cls, path: pathlib.Path | str) -> Directory:
+    async def from_path(cls, path: pathlib.Path | str) -> Directory:
         """Create a directory from a directory path in file system."""
         path = pathlib.Path(path)
         contents: list[Directory | File] = []
-        for x in path.iterdir():
-            if x.is_file():
-                contents.append(File.from_path(x))
-            elif x.is_dir():
-                contents.append(cls.from_path(x))
+        for name in await os.listdir(path):
+            x = path / name
+            if await os.path.isfile(x):
+                contents.append(await File.from_path(x))
+            elif await os.path.isdir(x):
+                contents.append(await cls.from_path(x))
         return Directory(path.name, contents)
 
     def copy(self) -> Directory:

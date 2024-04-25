@@ -132,7 +132,7 @@ class CliClient:
                 return self._quit()
             case ["declare", filename]:
                 try:
-                    directory = sprotocol.Directory.from_path(filename)
+                    directory = await sprotocol.Directory.from_path(filename)
                 except FileNotFoundError:
                     return f"Couldn't find {filename}"
                 await client_session.declare_directory(directory)

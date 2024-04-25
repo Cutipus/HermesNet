@@ -8,8 +8,8 @@ import pytest
 def file() -> filesystem.File:
     return filesystem.File('Lorem', 'Ipsum', 400)  # technically an invalid object
 
-
-def test_file_from_path(tmp_path: pathlib.Path) -> None:
+@pytest.mark.asyncio
+async def test_file_from_path(tmp_path: pathlib.Path) -> None:
     file_name = "hello world.txt"
     file_content = b"Hello, World!"
     _hash = hashlib.sha1()
@@ -17,7 +17,7 @@ def test_file_from_path(tmp_path: pathlib.Path) -> None:
     file_hash = _hash.hexdigest()
     test_file = tmp_path / file_name
     test_file.write_bytes(file_content)
-    file = filesystem.File.from_path(test_file)
+    file = await filesystem.File.from_path(test_file)
     assert file == filesystem.File(file_name, file_hash, len(file_content))
 
 
@@ -29,7 +29,8 @@ def test_file_search(file: filesystem.File) -> None:
 
 
 # NOTE: Need a better way to generate this data
-def test_directory_from_path(tmp_path: pathlib.Path):
+@pytest.mark.asyncio
+async def test_directory_from_path(tmp_path: pathlib.Path):
     def create_test_dir(tmp_path: pathlib.Path) -> pathlib.Path:
         d = tmp_path / "test dir"
         d.mkdir()
@@ -47,27 +48,27 @@ def test_directory_from_path(tmp_path: pathlib.Path):
         return d
 
     dir_path = create_test_dir(tmp_path)
-    dir = filesystem.Directory.from_path(dir_path)
+    dir = await filesystem.Directory.from_path(dir_path)
 
     expected_dir = filesystem.Directory("test dir", [
-            filesystem.File.from_path(tmp_path / "test dir/byebye.txt"),
-            filesystem.File.from_path(tmp_path / "test dir/hello world.txt"),
+            await filesystem.File.from_path(tmp_path / "test dir/byebye.txt"),
+            await filesystem.File.from_path(tmp_path / "test dir/hello world.txt"),
             filesystem.Directory("Sub Directory", [
                     filesystem.Directory("SubSub Dir", [
-                        filesystem.File.from_path(tmp_path / "test dir" / "Sub Directory" / "SubSub Dir" / "Devlog.txt"),
+                        await filesystem.File.from_path(tmp_path / "test dir" / "Sub Directory" / "SubSub Dir" / "Devlog.txt"),
                     ]),
             ]),
             filesystem.Directory("subdir", [
-                    filesystem.File.from_path(tmp_path / "test dir" / "subdir" / "hello world 2.txt"),
-                    filesystem.File.from_path(tmp_path / "test dir" / "subdir" / "Loremps.txt"),
+                    await filesystem.File.from_path(tmp_path / "test dir" / "subdir" / "hello world 2.txt"),
+                    await filesystem.File.from_path(tmp_path / "test dir" / "subdir" / "Loremps.txt"),
             ]),
     ])
     unexpected_dir = filesystem.Directory("test dir", [
-            filesystem.File.from_path(tmp_path / "test dir/byebye.txt"),
-            filesystem.File.from_path(tmp_path / "test dir/hello world.txt"),
+            await filesystem.File.from_path(tmp_path / "test dir/byebye.txt"),
+            await filesystem.File.from_path(tmp_path / "test dir/hello world.txt"),
             filesystem.Directory("subdir", [
-                    filesystem.File.from_path(tmp_path / "test dir" / "subdir" / "hello world 2.txt"),
-                    filesystem.File.from_path(tmp_path / "test dir" / "subdir" / "Loremps.txt"),
+                    await filesystem.File.from_path(tmp_path / "test dir" / "subdir" / "hello world 2.txt"),
+                    await filesystem.File.from_path(tmp_path / "test dir" / "subdir" / "Loremps.txt"),
             ]),
     ])
     assert dir == expected_dir
