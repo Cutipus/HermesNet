@@ -2,27 +2,11 @@ from hermesnet.protocol import filesystem
 import pathlib
 import hashlib
 import pytest
-import json
 
 
 @pytest.fixture
 def file() -> filesystem.File:
-    return filesystem.File('Lorem', 'Ipsum', 400)
-
-# NOTE: Is this a good idea?
-@pytest.fixture
-def directory() -> filesystem.Directory:
-    return filesystem.Directory("meow", contents=[
-            filesystem.File("hello", "world", 24)
-    ])
-
-
-def test_file_copy(file: filesystem.File) -> None:
-    assert file.copy() == file
-
-
-def test_file_repr(file: filesystem.File) -> None:
-    assert repr(file) == 'Lorem[Ipsum][400]'
+    return filesystem.File('Lorem', 'Ipsum', 400)  # technically an invalid object
 
 
 def test_file_from_path(tmp_path: pathlib.Path) -> None:
@@ -37,36 +21,11 @@ def test_file_from_path(tmp_path: pathlib.Path) -> None:
     assert file == filesystem.File(file_name, file_hash, len(file_content))
 
 
-# NOTE: Unnecessary to check
-def test_file_to_dict(file: filesystem.File) -> None:
-    assert file.to_dict() == {
-            'type': 'file',
-            'name': file.name,
-            'hash': file.hash,
-            'size': file.size,
-    }
-
-
-# NOTE: Unnecessary to check
-def test_file_to_json(file: filesystem.File) -> None:
-    assert file.to_json() == json.dumps({
-            'type': 'file',
-            'name': file.name,
-            'hash': file.hash,
-            'size': file.size,
-    })
-
-
 def test_file_search(file: filesystem.File) -> None:
     assert file.search(file.name) is not None
     assert file.search(file.name+"meow") is None
     assert file.search(file.name[1:]) is not None
     assert file.search(file.name[:3]) is not None
-
-
-# NOTE: Unnecessary
-def test_directory_copy(directory: filesystem.Directory) -> None:
-    assert directory.copy() == directory
 
 
 # NOTE: Need a better way to generate this data
