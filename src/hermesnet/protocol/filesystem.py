@@ -34,6 +34,7 @@ class FileDict(TypedDict):
     hash: str
     size: int
 
+
 class DirectoryDict(TypedDict):
     type: str
     name: str
@@ -193,6 +194,14 @@ class Directory:
                         out += '\n    ' + repr(x).replace("\n", "\n    ")
             out += '\n}'
         return out
+
+
+async def read_directory(path: pathlib.Path) -> Directory:
+    return await Directory.from_path(path)
+
+
+async def read_file(path: pathlib.Path) -> File:
+    return await File.from_path(path)
 
 
 def decode(encoded: bytes | str) -> File | Directory:
