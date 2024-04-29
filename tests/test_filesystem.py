@@ -70,13 +70,11 @@ def tmp_file_path(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 @pytest.fixture
-@pytest.mark.asyncio
 async def tmp_file(tmp_file_path: pathlib.Path) -> File:
     return await filesystem.File.from_path(tmp_file_path)
 
 
 @pytest.fixture
-@pytest.mark.asyncio
 async def tmp_dir(tmp_dir_path: pathlib.Path) -> Directory:
     return await filesystem.Directory.from_path(tmp_dir_path)
 
