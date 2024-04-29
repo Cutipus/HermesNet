@@ -15,6 +15,7 @@ from hermesnet.protocol import filesystem
 import pathlib
 import pytest
 from collections import Counter
+from typing import Protocol
 
 
 @pytest.fixture
