@@ -80,7 +80,6 @@ async def tmp_dir(tmp_dir_path: pathlib.Path) -> Directory:
 
 
 # Tests
-@pytest.mark.asyncio
 async def test_can_traverse(tmp_dir: Directory):
     expected_files: list[str] = ["byebye.txt", "hello world.txt", "Loremps.txt", "hello world 2.txt", "Devlog.txt"]
     actual_files: list[str] = []
@@ -90,12 +89,10 @@ async def test_can_traverse(tmp_dir: Directory):
     assert Counter(expected_files) == Counter(actual_files)
 
 
-@pytest.mark.asyncio
 async def test_can_encode_decode(tmp_dir: Directory):
     assert tmp_dir == filesystem.parse(tmp_dir.to_dict())
 
 
-@pytest.mark.asyncio
 async def test_file_search(tmp_file_path: pathlib.Path) -> None:
     file: filesystem.File = await filesystem.read_file(tmp_file_path)
     assert file.search(file.name) is not None
@@ -104,7 +101,6 @@ async def test_file_search(tmp_file_path: pathlib.Path) -> None:
     assert file.search(file.name[:3]) is not None
 
 
-@pytest.mark.asyncio
 async def test_directory_search(tmp_dir_path: pathlib.Path) -> None:
     dir = await filesystem.read_directory(tmp_dir_path)
     assert dir.search('nothing here') is None
