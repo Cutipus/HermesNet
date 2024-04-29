@@ -15,11 +15,40 @@ from hermesnet.protocol import filesystem
 import pathlib
 import pytest
 from collections import Counter
-from typing import Protocol
+from typing import Iterator, Protocol, TypedDict
 
 
+# Protocols
+class FileDict(TypedDict):
+    type: str
+    name: str
+    hash: str
+    size: int
+
+class File(Protocol):
+    name: str
+    hash: str
+
+    def to_dict(self) -> FileDict:
+        ...
+
+
+class DirectoryDict(TypedDict):
+    type: str
+    name: str
+    contents: list[DirectoryDict | FileDict]
+
+class Directory(Protocol):
+    def to_dict(self) -> DirectoryDict:
+        ...
+
+    def __iter__(self) -> Iterator[File | Directory]:
+        ...
+
+
+# Fixtures
 @pytest.fixture
-def tmp_dir(tmp_path: pathlib.Path) -> pathlib.Path:
+def tmp_dir_path(tmp_path: pathlib.Path) -> pathlib.Path:
     d = tmp_path / "test dir"
     d.mkdir()
     (d / "byebye.txt").write_bytes(b"Sionara, World!")
@@ -34,32 +63,43 @@ def tmp_dir(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 @pytest.fixture
-def tmp_file(tmp_path: pathlib.Path) -> pathlib.Path:
+def tmp_file_path(tmp_path: pathlib.Path) -> pathlib.Path:
     path = (tmp_path / "testFile.txt")
     path.write_bytes(b"Hello. World.")
     return path
 
 
+@pytest.fixture
 @pytest.mark.asyncio
-async def test_can_traverse(tmp_dir: pathlib.Path):
+async def tmp_file(tmp_file_path: pathlib.Path) -> File:
+    return await filesystem.File.from_path(tmp_file_path)
+
+
+@pytest.fixture
+@pytest.mark.asyncio
+async def tmp_dir(tmp_dir_path: pathlib.Path) -> Directory:
+    return await filesystem.Directory.from_path(tmp_dir_path)
+
+
+# Tests
+@pytest.mark.asyncio
+async def test_can_traverse(tmp_dir: Directory):
     expected_files: list[str] = ["byebye.txt", "hello world.txt", "Loremps.txt", "hello world 2.txt", "Devlog.txt"]
     actual_files: list[str] = []
-    dir: filesystem.Directory = await filesystem.read_directory(tmp_dir)
-    for x in dir:
+    for x in tmp_dir:
         if isinstance(x, filesystem.File):
             actual_files.append(x.name)
     assert Counter(expected_files) == Counter(actual_files)
 
 
 @pytest.mark.asyncio
-async def test_can_encode_decode(tmp_dir: pathlib.Path):
-    dir = await filesystem.read_directory(tmp_dir)
-    assert dir == filesystem.decode(dir.to_json())
+async def test_can_encode_decode(tmp_dir: Directory):
+    assert tmp_dir == filesystem.parse(tmp_dir.to_dict())
 
 
 @pytest.mark.asyncio
-async def test_file_search(tmp_file: pathlib.Path) -> None:
-    file: filesystem.File = await filesystem.read_file(tmp_file)
+async def test_file_search(tmp_file_path: pathlib.Path) -> None:
+    file: filesystem.File = await filesystem.read_file(tmp_file_path)
     assert file.search(file.name) is not None
     assert file.search(file.name+"meow") is None
     assert file.search(file.name[1:]) is not None
@@ -67,8 +107,8 @@ async def test_file_search(tmp_file: pathlib.Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_directory_search(tmp_dir: pathlib.Path) -> None:
-    dir = await filesystem.read_directory(tmp_dir)
+async def test_directory_search(tmp_dir_path: pathlib.Path) -> None:
+    dir = await filesystem.read_directory(tmp_dir_path)
     assert dir.search('nothing here') is None
     searched = dir.search('world')
     assert searched is not None

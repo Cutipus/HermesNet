@@ -15,10 +15,9 @@ Functions:
     parse: Convert a dict to a File or Directory.
 """
 from __future__ import annotations
-from typing import Any, Generator, Optional, Sequence, TypeGuard, TypedDict
+from typing import Any, Generator, Mapping, Optional, Sequence, TypeGuard, TypedDict
 from dataclasses import dataclass
 import hashlib
-import json
 import pathlib
 
 import aiofiles
@@ -89,10 +88,6 @@ class File:
             'size': self.size,
         }
 
-    def to_json(self) -> str:
-        """Represent the file as a JSON string."""
-        return json.dumps(self.to_dict())
-
     def search(self, term: str) -> Optional[File]:
         """Checks whether the term matches the file's name.
 
@@ -156,10 +151,6 @@ class Directory:
             'contents': [c.to_dict() for c in self.contents]
         }
 
-    def to_json(self) -> str:
-        """Represent directory as JSON str."""
-        return json.dumps(self.to_dict())
-
     def search(self, term: str) -> Optional[Directory]:
         """Search a directory, return a clone of that directory with the non-matching files removed."""
         search_result = self.copy()
@@ -204,21 +195,7 @@ async def read_file(path: pathlib.Path) -> File:
     return await File.from_path(path)
 
 
-def decode(encoded: bytes | str) -> File | Directory:
-    """Decode a json directory structure to class.
-
-    Parameters:
-        encoded: The JSON object to decode.
-
-    Raises:
-        ValueError: If the JSON doesn't parse to a File | Directory.
-    """
-    # TODO: process `loads` using curio in background
-    loaded: dict[Any, Any] = json.loads(encoded)
-    return parse(loaded)
-
-
-def parse(data: dict[Any, Any]) -> File | Directory:
+def parse(data: Mapping[str, Any]) -> File | Directory:
     """Parse dict to a File or Directory.
     
     Parameters:

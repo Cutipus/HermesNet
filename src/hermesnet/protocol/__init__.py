@@ -4,7 +4,6 @@ from .filesystem import (
         File as File,
         Directory as Directory,
         parse as parse,
-        decode as decode,
         )
 from .network import Session as Session
 from .messages import (

@@ -162,11 +162,11 @@ class Declare(ServerMessage):
     directory: filesystem.Directory
 
     def __bytes__(self) -> bytes:
-        return super().__bytes__() + self.directory.to_json().encode()
+        return super().__bytes__() + json.dumps(self.directory.to_dict()).encode()
 
     @classmethod
     def _from_bytes(cls, data: bytes) -> Self:
-        directory = filesystem.decode(data)
+        directory = filesystem.parse(json.loads(data))
         if not isinstance(directory, filesystem.Directory):
             raise ValueError("Not a directory!")
         return cls(directory=directory)
