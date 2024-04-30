@@ -88,15 +88,13 @@ class File:
             'size': self.size,
         }
 
-    def search(self, term: str) -> Optional[Self]:
+    def __contains__(self, term: str) -> bool:
         """Checks whether the term matches the file's name.
-
-        This method is called by Directory.search for duck-typing.
 
         Parameters:
             term: The term to match against.
         """
-        return self if term in self.name else None
+        return term in self.name
 
     def __repr__(self):
         """Represent a file as string."""
@@ -124,7 +122,7 @@ class Directory:
         Directories are iterable, recursively traverse all files and subdirs.
     """
     name: str
-    contents: list[Self | File]
+    contents: Sequence[Self | File]
 
     @classmethod
     async def from_path(cls, path: pathlib.Path | str) -> Directory:
@@ -153,11 +151,21 @@ class Directory:
 
     def search(self, term: str) -> Optional[Self]:
         """Search a directory, return a clone of that directory with the non-matching files removed."""
-        search_result = self.copy()
-        search_result.contents = [searched for y in search_result.contents if (searched := y.search(term))]
-        if search_result.contents == []:
+        if term in self.name:
+            return self.copy()
+        name = self.name
+        contents: Sequence[Self | File] = []
+        for x in self.contents:
+            if isinstance(x, Directory):
+                if (searched := x.search(term)) is not None:
+                    contents.append(searched)
+            else:
+                if term in x:
+                    contents.append(x)
+        if not contents:
             return None
-        return search_result
+        return type(self)(name, contents)
+
 
     def __iter__(self) -> Iterator[Self | File]:
         """Iterate the directory tree."""

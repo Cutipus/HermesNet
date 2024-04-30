@@ -63,9 +63,8 @@ class File(Protocol):
         """Convert the class instance to a dictionary."""
         ...
 
-    # NOTE: dubious method, is this really how searching works?!
-    def search(self, term: str) -> Optional[Self]:
-        """Check that term is inside the file's name."""
+    def __contains__(self, term: str) -> bool:
+        """Check if the file contains a string inside it."""
         ...
 
 
@@ -151,13 +150,6 @@ async def test_can_traverse(tmp_dir: Directory):
 async def test_can_encode_decode(tmp_dir: Directory):
     """Check that transforming a directory to dict and parsing it back returns the same directory."""
     assert tmp_dir == filesystem.parse(tmp_dir.to_dict())
-
-
-async def test_file_search(tmp_file: File) -> None:
-    assert tmp_file.search(tmp_file.name) is not None
-    assert tmp_file.search(tmp_file.name+"meow") is None
-    assert tmp_file.search(tmp_file.name[1:]) is not None
-    assert tmp_file.search(tmp_file.name[:3]) is not None
 
 
 async def test_directory_search(tmp_dir: Directory) -> None:
