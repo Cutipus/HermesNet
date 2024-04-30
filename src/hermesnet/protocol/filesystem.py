@@ -15,7 +15,7 @@ Functions:
     parse: Convert a dict to a File or Directory.
 """
 from __future__ import annotations
-from typing import Any, Generator, Mapping, Optional, Sequence, TypeGuard, TypedDict
+from typing import Any, Iterator, Mapping, Optional, Self, Sequence, TypeGuard, TypedDict
 from dataclasses import dataclass
 import hashlib
 import pathlib
@@ -63,7 +63,7 @@ class File:
     size: int
 
     @classmethod
-    async def from_path(cls, path: pathlib.Path | str) -> File:
+    async def from_path(cls, path: pathlib.Path | str) -> Self:
         """Create a file from a file location on system, calculating hash."""
         path = pathlib.Path(path)
         name = path.name
@@ -75,9 +75,9 @@ class File:
         hash = filehash.hexdigest()
         return cls(name, hash, filesize)
 
-    def copy(self) -> File:
+    def copy(self) -> Self:
         """Create a copy of the file."""
-        return File(self.name, self.hash, self.size)
+        return type(self)(self.name, self.hash, self.size)
 
     def to_dict(self) -> FileDict:
         """Represent the file as a dict for JSON processing."""
@@ -88,7 +88,7 @@ class File:
             'size': self.size,
         }
 
-    def search(self, term: str) -> Optional[File]:
+    def search(self, term: str) -> Optional[Self]:
         """Checks whether the term matches the file's name.
 
         This method is called by Directory.search for duck-typing.
@@ -124,7 +124,7 @@ class Directory:
         Directories are iterable, recursively traverse all files and subdirs.
     """
     name: str
-    contents: Sequence[Directory | File]
+    contents: list[Self | File]
 
     @classmethod
     async def from_path(cls, path: pathlib.Path | str) -> Directory:
@@ -137,11 +137,11 @@ class Directory:
                 contents.append(await File.from_path(x))
             elif await os.path.isdir(x):
                 contents.append(await cls.from_path(x))
-        return Directory(path.name, contents)
+        return cls(path.name, contents)
 
-    def copy(self) -> Directory:
+    def copy(self) -> Self:
         """Create a copy of the directory."""
-        return Directory(self.name, [x.copy() for x in self.contents])
+        return type(self)(self.name, [x.copy() for x in self.contents])
 
     def to_dict(self) -> DirectoryDict:
         """Represent dictionary as dict."""
@@ -151,7 +151,7 @@ class Directory:
             'contents': [c.to_dict() for c in self.contents]
         }
 
-    def search(self, term: str) -> Optional[Directory]:
+    def search(self, term: str) -> Optional[Self]:
         """Search a directory, return a clone of that directory with the non-matching files removed."""
         search_result = self.copy()
         search_result.contents = [searched for y in search_result.contents if (searched := y.search(term))]
@@ -159,7 +159,7 @@ class Directory:
             return None
         return search_result
 
-    def __iter__(self) -> Generator[Directory | File, None, None]:
+    def __iter__(self) -> Iterator[Self | File]:
         """Iterate the directory tree."""
         yield self
         for x in self.contents:
@@ -185,14 +185,6 @@ class Directory:
                         out += '\n    ' + repr(x).replace("\n", "\n    ")
             out += '\n}'
         return out
-
-
-async def read_directory(path: pathlib.Path) -> Directory:
-    return await Directory.from_path(path)
-
-
-async def read_file(path: pathlib.Path) -> File:
-    return await File.from_path(path)
 
 
 def parse(data: Mapping[str, Any]) -> File | Directory:

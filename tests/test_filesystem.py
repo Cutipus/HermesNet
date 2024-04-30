@@ -15,7 +15,7 @@ from hermesnet.protocol import filesystem
 import pathlib
 import pytest
 from collections import Counter
-from typing import Iterator, Protocol, TypedDict
+from typing import Iterator, Optional, Protocol, Self, Sequence, TypedDict
 
 
 # Protocols
@@ -32,6 +32,9 @@ class File(Protocol):
     def to_dict(self) -> FileDict:
         ...
 
+    def search(self, term: str) -> Optional[Self]:
+        ...
+
 
 class DirectoryDict(TypedDict):
     type: str
@@ -39,11 +42,20 @@ class DirectoryDict(TypedDict):
     contents: list[DirectoryDict | FileDict]
 
 class Directory(Protocol):
+    name: str
+
+    @property  # declare it as immutable
+    def contents(self) -> Sequence[Directory | File]: ...
+
     def to_dict(self) -> DirectoryDict:
         ...
 
     def __iter__(self) -> Iterator[File | Directory]:
         ...
+
+    def search(self, term: str) -> Optional[Self]:
+        ...
+
 
 
 # Fixtures
@@ -78,7 +90,6 @@ async def tmp_file(tmp_file_path: pathlib.Path) -> File:
 async def tmp_dir(tmp_dir_path: pathlib.Path) -> Directory:
     return await filesystem.Directory.from_path(tmp_dir_path)
 
-
 # Tests
 async def test_can_traverse(tmp_dir: Directory):
     expected_files: list[str] = ["byebye.txt", "hello world.txt", "Loremps.txt", "hello world 2.txt", "Devlog.txt"]
@@ -93,18 +104,16 @@ async def test_can_encode_decode(tmp_dir: Directory):
     assert tmp_dir == filesystem.parse(tmp_dir.to_dict())
 
 
-async def test_file_search(tmp_file_path: pathlib.Path) -> None:
-    file: filesystem.File = await filesystem.read_file(tmp_file_path)
-    assert file.search(file.name) is not None
-    assert file.search(file.name+"meow") is None
-    assert file.search(file.name[1:]) is not None
-    assert file.search(file.name[:3]) is not None
+async def test_file_search(tmp_file: File) -> None:
+    assert tmp_file.search(tmp_file.name) is not None
+    assert tmp_file.search(tmp_file.name+"meow") is None
+    assert tmp_file.search(tmp_file.name[1:]) is not None
+    assert tmp_file.search(tmp_file.name[:3]) is not None
 
 
-async def test_directory_search(tmp_dir_path: pathlib.Path) -> None:
-    dir = await filesystem.read_directory(tmp_dir_path)
-    assert dir.search('nothing here') is None
-    searched = dir.search('world')
+async def test_directory_search(tmp_dir: Directory) -> None:
+    assert tmp_dir.search('nothing here') is None
+    searched = tmp_dir.search('world')
     assert searched is not None
     assert len(searched.contents) == 2
     for x in searched:
