@@ -3,7 +3,7 @@
 Requirements:
     - when given an invalid path it should raise an error
     - when given a directory it should return an object with a name matching the directory
-    - when given an empty directory it should return an object who's contents are an empty sequence
+    - when given an empty directory it should return an object whose contents are an empty sequence
     - when given a directory with only files it should return 
     - you should be able to traverse a directory hierarchy
     - you should be able to list all the files in the directory
@@ -25,7 +25,7 @@ from typing import Iterator, Optional, Protocol, Self, Sequence, TypedDict
 # Protocols
 class FileDict(TypedDict):
     """A dictionary representation of a File.
-    
+
     Useful for serialization.
     """
     type: str
@@ -36,7 +36,7 @@ class FileDict(TypedDict):
 
 class DirectoryDict(TypedDict):
     """A dictionary representation of a Directory.
-    
+
     Useful for serialization.
     """
     type: str
@@ -46,13 +46,18 @@ class DirectoryDict(TypedDict):
 
 class File(Protocol):
     """A file in the system.
-    
+
     Attributes:
         name: The file's name.
         hash: The calculated hash of the file's contents.
     """
     name: str
     hash: str
+
+    @classmethod
+    async def from_path(cls, path: pathlib.Path) -> Self:
+        """Alternative constructor, creating a File object from a file path."""
+        ...
 
     def to_dict(self) -> FileDict:
         """Convert the class instance to a dictionary."""
@@ -66,7 +71,7 @@ class File(Protocol):
 
 class Directory(Protocol):
     """A directory in the system.
-    
+
     Attributes:
         name: The directory's name.
         contents: A sequence of subdirectories and files contained in the directory.
@@ -75,6 +80,11 @@ class Directory(Protocol):
 
     @property  # declare it as immutable
     def contents(self) -> Sequence[Directory | File]: ...
+
+    @classmethod
+    async def from_path(cls, path: pathlib.Path) -> Self:
+        """Alternative constructor, creating a Directory object from a directory path."""
+        ...
 
     def to_dict(self) -> DirectoryDict:
         """Convert the directory to a dictionary."""
