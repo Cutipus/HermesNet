@@ -1,15 +1,18 @@
+"""Tests for protocol/filesystem
+
+Requirements:
+    - when given an invalid path it should raise an error
+    - when given a directory it should return an object with a name matching the directory
+    - when given an empty directory it should return an object who's contents are an empty sequence
+    - when given a directory with only files it should return 
+    - you should be able to traverse a directory hierarchy
+    - you should be able to list all the files in the directory
+    - when you search for a term it should clump sub-hierarchis that match
+    - you should be able to only view files with a certain extension
+    - when you search for a term you should be able to see the hashes of all the files in the result
+    - you should be able to know how many folders there are
 """
-- when given an invalid path it should raise an error
-- when given a directory it should return an object with a name matching the directory
-- when given an empty directory it should return an object who's contents are an empty sequence
-- when given a directory with only files it should return 
-- you should be able to traverse a directory hierarchy
-- you should be able to list all the files in the directory
-- when you search for a term it should clump sub-hierarchis that match
-- you should be able to only view files with a certain extension
-- when you search for a term you should be able to see the hashes of all the files in the result
-- you should be able to know how many folders there are
-"""
+# Imports
 from __future__ import annotations
 from hermesnet.protocol import filesystem
 import pathlib
@@ -18,42 +21,74 @@ from collections import Counter
 from typing import Iterator, Optional, Protocol, Self, Sequence, TypedDict
 
 
+
 # Protocols
 class FileDict(TypedDict):
+    """A dictionary representation of a File.
+    
+    Useful for serialization.
+    """
     type: str
     name: str
     hash: str
     size: int
 
-class File(Protocol):
-    name: str
-    hash: str
-
-    def to_dict(self) -> FileDict:
-        ...
-
-    def search(self, term: str) -> Optional[Self]:
-        ...
-
 
 class DirectoryDict(TypedDict):
+    """A dictionary representation of a Directory.
+    
+    Useful for serialization.
+    """
     type: str
     name: str
     contents: list[DirectoryDict | FileDict]
 
+
+class File(Protocol):
+    """A file in the system.
+    
+    Attributes:
+        name: The file's name.
+        hash: The calculated hash of the file's contents.
+    """
+    name: str
+    hash: str
+
+    def to_dict(self) -> FileDict:
+        """Convert the class instance to a dictionary."""
+        ...
+
+    # NOTE: dubious method, is this really how searching works?!
+    def search(self, term: str) -> Optional[Self]:
+        """Check that term is inside the file's name."""
+        ...
+
+
 class Directory(Protocol):
+    """A directory in the system.
+    
+    Attributes:
+        name: The directory's name.
+        contents: A sequence of subdirectories and files contained in the directory.
+    """
     name: str
 
     @property  # declare it as immutable
     def contents(self) -> Sequence[Directory | File]: ...
 
     def to_dict(self) -> DirectoryDict:
+        """Convert the directory to a dictionary."""
         ...
 
     def __iter__(self) -> Iterator[File | Directory]:
+        """Traverse the directory hierarchy."""
         ...
 
     def search(self, term: str) -> Optional[Self]:
+        """Filter a term from the directory hierarchy.
+        
+        The returned directory should not have 
+        """
         ...
 
 
@@ -90,8 +125,11 @@ async def tmp_file(tmp_file_path: pathlib.Path) -> File:
 async def tmp_dir(tmp_dir_path: pathlib.Path) -> Directory:
     return await filesystem.Directory.from_path(tmp_dir_path)
 
+
+
 # Tests
 async def test_can_traverse(tmp_dir: Directory):
+    """Check that traversing the directory yields all the files therein."""
     expected_files: list[str] = ["byebye.txt", "hello world.txt", "Loremps.txt", "hello world 2.txt", "Devlog.txt"]
     actual_files: list[str] = []
     for x in tmp_dir:
@@ -101,6 +139,7 @@ async def test_can_traverse(tmp_dir: Directory):
 
 
 async def test_can_encode_decode(tmp_dir: Directory):
+    """Check that transforming a directory to dict and parsing it back returns the same directory."""
     assert tmp_dir == filesystem.parse(tmp_dir.to_dict())
 
 
