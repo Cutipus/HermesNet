@@ -29,7 +29,7 @@ Classes:
     QuerySearchResults: A response to Query with all the users.
 """
 # stdlib
-from typing import Any, ClassVar, NamedTuple, Self
+from typing import Any, ClassVar, NamedTuple, Self, TypeGuard
 from dataclasses import dataclass
 import json
 
@@ -38,6 +38,9 @@ from hermesnet.protocol import filesystem
 
 
 COMMAND_SIZE = 1
+
+
+type JSON = dict[str, 'JSON'] | list['JSON'] | str | int | float | bool | None
 
 
 class User(NamedTuple):
@@ -166,9 +169,15 @@ class Declare(ServerMessage):
 
     @classmethod
     def _from_bytes(cls, data: bytes) -> Self:
-        directory = filesystem.parse(json.loads(data))
-        if not isinstance(directory, filesystem.Directory):
-            raise ValueError("Not a directory!")
+        try:
+            directory_dict: JSON = json.loads(data)
+        except json.JSONDecodeError:
+            raise ValueError("Can't parse data from JSON.")
+        if not isinstance(directory_dict, dict):
+            raise ValueError('Data should be a dictionary.')
+        if not filesystem.is_directorydict(directory_dict):
+            raise ValueError("Data does not conform to DirectoryDict rules.")
+        directory = filesystem.Directory.from_dict(directory_dict)
         return cls(directory=directory)
 
 
@@ -196,37 +205,48 @@ class SearchResults(ServerMessage):
         basic_results = [((name, ip), [d.to_dict() for d in dirs]) for (name, ip), dirs in self.results.items()]
         return super().__bytes__() + json.dumps(basic_results).encode()
 
+    @staticmethod
+    def _is_list_of(val: dict[Any, Any]) -> dict[User, list[filesystem.DirectoryDict]]:
+        ...
+
     @classmethod
     def _from_bytes(cls, data: bytes) -> Self:
         # can raise ValueError
         results: dict[User, list[filesystem.Directory]] = dict()
+
         try:
-            parsed: list[Any] | Any = json.loads(data)
+            parsed: JSON = json.loads(data)
         except json.JSONDecodeError:
             raise ValueError(f"Can't parse {data}")
         if not isinstance(parsed, list):
             raise ValueError(f"Can't parse {data}")
-        entry: tuple[tuple[Any, Any], Any] | Any
+
         for entry in parsed:
-            try:
-                (username, ip_addr), directory_dicts = entry
-            except (ValueError, TypeError):
-                raise ValueError(f"Can't parse {data}")
-            if not isinstance(username, str) or not isinstance(ip_addr, str) or not isinstance(directory_dicts, list):
-                raise ValueError(f"Can't parse {data}")
+            if not cls._is_entry(entry):
+                raise ValueError(f"Can't parse data - not an entry: {data}")
+            (username, ip_addr), directory_dicts = entry
             user = User(username, ip_addr)
             dirs: list[filesystem.Directory] = []
-            dir_dict: Any
+
             for dir_dict in directory_dicts:
-                try:
-                    dir = filesystem.parse(dir_dict)
-                except ValueError:
-                    raise ValueError(f"Can't parse {data}")
-                if not isinstance(dir, filesystem.Directory):
-                    raise ValueError(f"Can't parse {data}")
-                dirs.append(dir)
+                if not isinstance(dir_dict, dict):
+                    raise ValueError(f"Can't parse, should be a dictionary: {dir_dict}")
+                if not filesystem.is_directorydict(dir_dict):
+                    raise ValueError(f"Can't parse, doesn't conform to DirectoryDict: {dir_dict}")
+                dirs.append(filesystem.Directory.from_dict(dir_dict))
             results[user] = dirs
         return cls(results=results)
+
+    @staticmethod
+    def _is_entry(val: JSON) -> TypeGuard[tuple[tuple[str, str], list[JSON]]]:
+        try:
+            return isinstance(val, list) \
+                    and isinstance(val[0], list) \
+                    and isinstance(val[0][0], str) \
+                    and isinstance(val[0][1], str) \
+                    and isinstance(val[1], list)
+        except (IndexError, TypeError):
+            return False
 
 
 @dataclass
@@ -262,12 +282,24 @@ class QuerySearchResults(ServerMessage):
     def _from_bytes(cls, data: bytes) -> Self:
         # can raise json.decoder.JSONDecoderError
         try:
-            parsed: list[tuple[str, str]] = json.loads(data) # NOTE: no type for list of size 2
+            parsed: JSON = json.loads(data) # NOTE: no type for list of size 2
         except json.JSONDecodeError:
             raise ValueError(f"Can't parse {data}")
-
-        # TODO: ensure parsed adheres to the type
+        if not cls._is_list_of_lists_of_two_strings(parsed):
+            raise ValueError(f"Can't parse {data}")
         return cls(results=[User(name, addr) for name, addr in parsed])
+    
+    @staticmethod
+    def _is_list_of_lists_of_two_strings(val: JSON) -> TypeGuard[list[tuple[str, str]]]:
+        if not isinstance(val, list):
+            return False
+        for subval in val:
+            try:
+                if not (isinstance(subval, list) and isinstance(subval[0], str) and isinstance(subval[1], str)):
+                    return False
+            except IndexError:
+                return False
+        return True
 
 
 def from_bytes(data: bytes) -> ServerMessage:

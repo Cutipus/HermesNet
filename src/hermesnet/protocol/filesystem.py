@@ -15,7 +15,7 @@ Functions:
     parse: Convert a dict to a File or Directory.
 """
 from __future__ import annotations
-from typing import Any, Iterator, Mapping, Optional, Self, Sequence, TypeGuard, TypedDict
+from typing import Any, Iterator, Literal, Optional, Self, Sequence, TypeGuard, TypedDict, overload
 from dataclasses import dataclass
 import hashlib
 import pathlib
@@ -28,16 +28,40 @@ _BUFSIZE = 1024 ** 2  # chunk size to read from disk
 
 
 class FileDict(TypedDict):
-    type: str
+    type: Literal['file']
     name: str
     hash: str
     size: int
 
 
+def is_filedict(val: dict[Any, Any]) -> TypeGuard[FileDict]:
+    try:
+        return all((
+                val['type'] == 'file',
+                isinstance(val['name'], str),
+                isinstance(val['hash'], str),
+                isinstance(val['size'], int),
+            ))
+    except KeyError:
+        return False
+
+
 class DirectoryDict(TypedDict):
-    type: str
+    type: Literal['directory']
     name: str
     contents: list[DirectoryDict | FileDict]
+
+
+def is_directorydict(val: dict[Any, Any]) -> TypeGuard[DirectoryDict]:
+    try:
+        return all((
+                val['type'] == 'directory',
+                isinstance(val['name'], str),
+                isinstance(val['contents'], list),
+                all(is_directorydict(x) or is_filedict(x) for x in val['contents']),
+            ))
+    except KeyError:
+        return False
 
 
 @dataclass(eq=True)
@@ -63,7 +87,7 @@ class File:
     size: int
 
     @classmethod
-    async def from_path(cls, path: pathlib.Path | str) -> Self:
+    async def from_path(cls, path: pathlib.Path) -> Self:
         """Create a file from a file location on system, calculating hash."""
         path = pathlib.Path(path)
         name = path.name
@@ -74,6 +98,10 @@ class File:
                 filehash.update(data)
         hash = filehash.hexdigest()
         return cls(name, hash, filesize)
+
+    @classmethod
+    def from_dict(cls, data: FileDict) -> Self:
+        return cls(data['name'], data['hash'], data['size'])
 
     def copy(self) -> Self:
         """Create a copy of the file."""
@@ -125,9 +153,8 @@ class Directory:
     contents: Sequence[Self | File]
 
     @classmethod
-    async def from_path(cls, path: pathlib.Path | str) -> Directory:
+    async def from_path(cls, path: pathlib.Path) -> Directory:
         """Create a directory from a directory path in file system."""
-        path = pathlib.Path(path)
         contents: list[Directory | File] = []
         for name in await os.listdir(path):
             x = path / name
@@ -137,9 +164,9 @@ class Directory:
                 contents.append(await cls.from_path(x))
         return cls(path.name, contents)
 
-    def copy(self) -> Self:
-        """Create a copy of the directory."""
-        return type(self)(self.name, [x.copy() for x in self.contents])
+    @classmethod
+    def from_dict(cls, data: DirectoryDict) -> Self:
+        return cls(data['name'], [_parse_dict_to_file_or_directory(x) for x in data['contents']])
 
     def to_dict(self) -> DirectoryDict:
         """Represent dictionary as dict."""
@@ -165,6 +192,10 @@ class Directory:
         if not contents:
             return None
         return type(self)(name, contents)
+
+    def copy(self) -> Self:
+        """Create a copy of the directory."""
+        return type(self)(self.name, [x.copy() for x in self.contents])
 
     def __iter__(self) -> Iterator[Self | File]:
         """Iterate the directory tree."""
@@ -194,24 +225,14 @@ class Directory:
         return out
 
 
-def parse(data: Mapping[str, Any]) -> File | Directory:
-    """Parse dict to a File or Directory.
-    
-    Parameters:
-        data: The dictionary to parse.
+@overload
+def _parse_dict_to_file_or_directory(data: DirectoryDict) -> Directory: ...
 
-    Raises:
-        ValueError: If the dict cannot be parsed.
-    """
+@overload
+def _parse_dict_to_file_or_directory(data: FileDict) -> File: ...
 
-    def list_of_dicts(lst: Sequence[Any]) -> TypeGuard[list[dict[Any, Any]]]:
-        return all(isinstance(item, dict) for item in lst)
-
-    match data:
-        case {'type': 'file', 'name': str(name), 'hash': str(hash), 'size': int(size)}:
-            return File(name, hash, size)
-        case {'type': 'directory', 'name': str(name), 'contents': content} if list_of_dicts(content):
-            parsed_content = [parse(element) for element in content]
-            return Directory(name, parsed_content)
-        case _:
-            raise ValueError("Bad dict")
+def _parse_dict_to_file_or_directory(data: DirectoryDict | FileDict) -> Directory | File:
+    if data['type'] == 'file':
+        return File.from_dict(data)
+    else:
+        return Directory.from_dict(data)

@@ -3,7 +3,6 @@ __ALL__ = ['directories', 'server_protocol']
 from .filesystem import (
         File as File,
         Directory as Directory,
-        parse as parse,
         )
 from .network import Session as Session
 from .messages import (
