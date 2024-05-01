@@ -166,7 +166,6 @@ class Directory:
             return None
         return type(self)(name, contents)
 
-
     def __iter__(self) -> Iterator[Self | File]:
         """Iterate the directory tree."""
         yield self

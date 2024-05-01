@@ -147,13 +147,16 @@ async def test_can_traverse(tmp_dir: Directory):
     assert Counter(expected_files) == Counter(actual_files)
 
 
-async def test_can_encode_decode(tmp_dir: Directory):
+async def test_to_dict_and_parse_is_equal(tmp_dir: Directory):
     """Check that transforming a directory to dict and parsing it back returns the same directory."""
     assert tmp_dir == filesystem.parse(tmp_dir.to_dict())
 
 
-async def test_directory_search(tmp_dir: Directory) -> None:
+async def test_searching_nothing_returns_none(tmp_dir: Directory) -> None:
     assert tmp_dir.search('nothing here') is None
+
+
+async def test_search_result_includes_all_results(tmp_dir: Directory) -> None:
     searched = tmp_dir.search('world')
     assert searched is not None
     assert len(searched.contents) == 2
