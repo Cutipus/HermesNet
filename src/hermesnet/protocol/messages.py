@@ -29,6 +29,7 @@ Classes:
     QuerySearchResults: A response to Query with all the users.
 """
 # imports
+from abc import ABC
 from typing import Any, ClassVar, NamedTuple, Self, TypeGuard
 from dataclasses import dataclass
 import json
@@ -51,9 +52,9 @@ class User(NamedTuple):
 
 
 @dataclass
-class ServerMessage():
+class ServerMessage(ABC):
     """Class for representing a message to send to the server."""
-    _registered_message_types: ClassVar[dict[int, type]] = dict()
+    _registered_message_types: ClassVar[dict[int, type[Self]]] = dict()
     command: ClassVar[int]
 
     @classmethod
@@ -67,7 +68,7 @@ class ServerMessage():
             raise ValueError(f"{bytecode} is an unsupported command code.")
 
         message_data = data[COMMAND_SIZE:]
-        return cls._registered_message_types[bytecode]._from_bytes(message_data) # type: ignore
+        return cls._registered_message_types[bytecode]._from_bytes(message_data)
 
     @classmethod
     def _from_bytes(cls, data: bytes) -> Self:
