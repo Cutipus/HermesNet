@@ -28,21 +28,22 @@ Classes:
     Query: A request to find all users that have declared some file.
     QuerySearchResults: A response to Query with all the users.
 """
-# stdlib
+# imports
 from typing import Any, ClassVar, NamedTuple, Self, TypeGuard
 from dataclasses import dataclass
 import json
-
-# project
 from hermesnet.protocol import filesystem
 
 
+# consts
 COMMAND_SIZE = 1
 
 
+# types
 type JSON = dict[str, 'JSON'] | list['JSON'] | str | int | float | bool | None
 
 
+# classes
 class User(NamedTuple):
     """Represents a user."""
     username: str
@@ -302,5 +303,6 @@ class QuerySearchResults(ServerMessage):
         return True
 
 
+# functions
 def from_bytes(data: bytes) -> ServerMessage:
     return ServerMessage.from_bytes(data)
