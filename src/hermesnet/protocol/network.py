@@ -13,21 +13,42 @@ Classes:
 Logging:
     Logging functionality is provided.
 """
-# stdlib
+# Imports
 from __future__ import annotations
+import asyncio
 from dataclasses import dataclass, field
 import logging
 
-# asyncio
 from asyncio import StreamReader, StreamWriter
+from typing import Self
 
-# project
 from hermesnet.protocol import messages
 
 
+
+# Consts
 FRAME_SIZE = 4 
 CHUNK_SIZE = 1024
 _logger = logging.getLogger(__name__)
+
+
+
+# Classes
+@dataclass
+class Connection:
+    reader: StreamReader
+    writer: StreamWriter
+
+    @classmethod
+    async def create_connection(cls, addr: tuple[str, int]) -> Self:
+        return cls(*await asyncio.open_connection(*addr))
+
+    async def read(self, n: int) -> bytes:
+        return await self.reader.read(n)
+
+    async def write(self, data: bytes) -> None:
+        self.writer.write(data)
+        await self.writer.drain()
 
 
 @dataclass
@@ -44,7 +65,7 @@ class Session:
         send_message: Send a message to the server.
         disconnect: Send a disconnect message and close the socket connection.
     """
-    
+    # conn: Connection
     reader: StreamReader
     writer: StreamWriter
     addr: tuple[str, int] = field(init=False)
