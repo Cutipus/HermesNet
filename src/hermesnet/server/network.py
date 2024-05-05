@@ -39,23 +39,21 @@ Example:
         server = Server('127.0.0.1', 22848, PingProcessor())
         curio.run(server.run())
 """
-# stdlib
+# Imports
 from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 from dataclasses import dataclass
 import logging.config
 
-# asyncio
 import asyncio
-#import curio, curio.io
 
-# project
 from hermesnet import protocol as sprotocol
 
 
 _logger = logging.getLogger(__name__)
 
 
+# Protocols
 class Processor(Protocol):
     """A Protocol to represet a processor that can be used with the server."""
     def add_client(self, addr: tuple[str, int]) -> AbstractAsyncContextManager[tuple[asyncio.Queue[sprotocol.ServerMessage], asyncio.Queue[sprotocol.ServerMessage]]]:
@@ -133,3 +131,4 @@ class Server:
                 _logger.info(f"{addr}: Sending response {response}")
 
             _logger.info(f"{addr}: Finished handling.")
+ 
