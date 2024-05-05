@@ -1,7 +1,8 @@
 # Imports
 import asyncio
 from dataclasses import dataclass, field
-from typing import AsyncIterator
+from types import TracebackType
+from typing import Awaitable, Callable, Self
 
 
 
@@ -59,39 +60,38 @@ class Session:
             msg += chunk
         return bytes(msg)
 
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *_: tuple[type[BaseException], BaseException, TracebackType]) -> None:
+        await self.disconnect()
+
 
 @dataclass
-class Server:
-    _address: tuple[str, int]
-    _unhandled_clients: asyncio.Queue[Session] = field(default_factory=asyncio.Queue, init=False)
+class SessionSpawner:
+    callback: Callable[[Session], Awaitable[None]]
+    address: tuple[str, int]
     _asyncio_server: asyncio.Server = field(init=False)
 
     async def _handler(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         session = Session(reader, writer)
-        await self._unhandled_clients.put(session)
+        await self.callback(session)
 
     async def start(self) -> None:
-        self._asyncio_server = await asyncio.start_server(self._handler, self._address[0], self._address[1])
+        self._asyncio_server = await asyncio.start_server(self._handler, self.address[0], self.address[1])
 
     async def stop(self) -> None:
         self._asyncio_server.close()
 
-    async def __anext__(self) -> Session:
-        return await self._unhandled_clients.get()
-
-    def __aiter__(self) -> AsyncIterator[Session]:
-        return self
-
-
 
 # Factories
-async def start_server(address: tuple[str, int]) -> Server:
-    s = Server(address)
+async def start_server(callback: Callable[[Session], Awaitable[None]], address: tuple[str, int]=('0.0.0.0', 13371)) -> SessionSpawner:
+    s = SessionSpawner(callback, address)
     await s.start()
     return s
 
 
-async def connect(address: tuple[str, int]=('0.0.0.0', 13371)) -> Session:
+async def connect(address: tuple[str, int]) -> Session:
     reader, writer = await asyncio.open_connection(*address)
     s = Session(reader, writer)
     return s
