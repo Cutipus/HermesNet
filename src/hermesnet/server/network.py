@@ -50,7 +50,10 @@ import asyncio
 from hermesnet import protocol as sprotocol
 
 
+
+# Globals
 _logger = logging.getLogger(__name__)
+
 
 
 # Protocols
@@ -60,6 +63,8 @@ class Processor(Protocol):
         ...
 
 
+
+# Classes
 @dataclass
 class Server:
     """A class to represent a server.
