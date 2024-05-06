@@ -136,11 +136,6 @@ class UserManager():
     """
 
     def __init__(self):
-        #self.logged_in_users: set[LoggedInUser] = set()
-        #self.logged_out_users: set[LoggedOutUser] = set()
-        #self.online_guests: set[OnlineGuest] = set()
-        #self.offline_guests: set[OfflineGuest] = set()
-        
         self.logged_in_users: list[LoggedInUser] = []
         self.logged_out_users: list[LoggedOutUser] = []
         self.online_guests: list[OnlineGuest] = []
